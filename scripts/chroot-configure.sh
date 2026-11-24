@@ -79,7 +79,7 @@ visudo -cq
 
 say "services"
 systemctl enable NetworkManager.service greetd.service nftables.service glassos-boot-sound.service \
-  systemd-timesyncd.service bluetooth.service >/dev/null 2>&1
+  systemd-timesyncd.service bluetooth.service tlp.service >/dev/null 2>&1
 # Bluetooth radio stays off until you switch it on in Settings
 if [ -f /etc/bluetooth/main.conf ]; then
   sed -i -e 's/^#\?AutoEnable *=.*/AutoEnable=false/' /etc/bluetooth/main.conf

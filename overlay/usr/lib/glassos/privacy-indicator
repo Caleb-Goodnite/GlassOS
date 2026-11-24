@@ -8,14 +8,20 @@ stopped or switched off.
 
 Reads only this computer: PipeWire's list of audio/video streams (pw-dump) and which programs
 have a camera device (/dev/video*) open.
+
+It doesn't poll: it sleeps until PipeWire reports a change or something opens or closes a
+camera, so it costs no battery while nothing happens.
 """
+import ctypes
+import glob
 import json
 import os
+import select
 import subprocess
 import sys
 import time
 
-POLL = 2.0
+IN_OPEN, IN_CLOSE_WRITE, IN_CLOSE_NOWRITE, IN_CREATE = 0x20, 0x08, 0x10, 0x100
 # GlassOS's own short system sounds aren't "an app playing sound"
 OWN_SOUNDS = {"pw-play", "paplay", "aplay", "play", "glass-sound", "glass-soundd"}
 NOT_APPS = {"pipewire", "wireplumber", "pipewire-pulse", "xdg-desktop-portal", "xdg-desktop-portal-hyprland"}
@@ -55,14 +61,9 @@ def mic_switched_off():
         return False
 
 
-def streams():
-    """{"mic": {...}, "out": {...}, "screen": {...}, "camera": {...}} app names from PipeWire"""
+def streams(objs):
+    """{"mic": {...}, "out": {...}, "screen": {...}, "camera": {...}} app names from PipeWire's objects"""
     found = {"mic": set(), "out": set(), "screen": set(), "camera": set()}
-    try:
-        out = subprocess.run(["pw-dump"], capture_output=True, text=True, timeout=5).stdout
-        objs = json.loads(out or "[]")
-    except (OSError, ValueError, subprocess.TimeoutExpired):
-        return found
     mic_off = mic_switched_off()
     # a stream node only names its app; the program's file name sits on the client that owns it
     clients = {o.get("id"): (o.get("info") or {}).get("props") or {}
@@ -117,16 +118,95 @@ def render(state):
     return {"text": text, "tooltip": "\n".join(tips), "class": classes}
 
 
+class CameraWatch:
+    """Wakes up when any program opens or closes a camera (inotify on /dev/video*), or a
+    camera is plugged in."""
+
+    def __init__(self):
+        self.libc = ctypes.CDLL(None, use_errno=True)
+        self.fd = self.libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
+        if self.fd >= 0:
+            self.libc.inotify_add_watch(self.fd, b"/dev", IN_CREATE)
+            self.watch()
+
+    def watch(self):
+        for dev in glob.glob("/dev/video*"):
+            self.libc.inotify_add_watch(self.fd, dev.encode(), IN_OPEN | IN_CLOSE_WRITE | IN_CLOSE_NOWRITE)
+
+
+class PipeWire:
+    """PipeWire's objects, kept up to date from one "pw-dump --monitor": it prints every object
+    once, then each object that changes ("info": null when it's gone). Only this one connection
+    is used; a second pw-dump would itself show up as a change and wake us again."""
+
+    def __init__(self):
+        self.objs, self.buf, self.proc = {}, "", None
+        try:
+            self.proc = subprocess.Popen(["pw-dump", "--monitor", "--no-colors"], stdout=subprocess.PIPE,
+                                         stderr=subprocess.DEVNULL)
+            os.set_blocking(self.proc.stdout.fileno(), False)
+        except OSError:
+            pass
+
+    def fd(self):
+        return self.proc.stdout.fileno() if self.proc else -1
+
+    def alive(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def read(self):
+        try:
+            while True:
+                chunk = os.read(self.fd(), 65536)
+                if not chunk:
+                    break
+                self.buf += chunk.decode(errors="replace")
+        except (BlockingIOError, OSError):
+            pass
+        dec = json.JSONDecoder()
+        while True:
+            self.buf = self.buf.lstrip()
+            try:
+                batch, end = dec.raw_decode(self.buf)
+            except ValueError:
+                break   # the rest hasn't arrived yet
+            self.buf = self.buf[end:]
+            for o in batch if isinstance(batch, list) else []:
+                if o.get("info") is None:
+                    self.objs.pop(o.get("id"), None)
+                else:
+                    self.objs[o.get("id")] = o
+
+
+def drain(fd):
+    try:
+        while os.read(fd, 65536):
+            pass
+    except (BlockingIOError, OSError):
+        pass
+
+
 def main():
+    cams = CameraWatch()
+    pw = PipeWire()
     last = None
     while True:
-        s = streams()
+        # sleep until something changes (a 30 s check as a safety net)
+        select.select([f for f in (cams.fd, pw.fd()) if f >= 0], [], [], 30)
+        time.sleep(0.3)   # a stream starting is a burst of changes: let it settle, then look once
+        pw.read()
+        if cams.fd >= 0:
+            drain(cams.fd)
+            cams.watch()  # a camera plugged in since last time
+        s = streams(list(pw.objs.values()))
         s["camera"] |= camera_apps()
         msg = json.dumps(render(s))
         if msg != last:
             print(msg, flush=True)
             last = msg
-        time.sleep(POLL)
+        if not pw.alive():  # PipeWire restarted
+            time.sleep(2)
+            pw = PipeWire()
 
 
 if __name__ == "__main__":
