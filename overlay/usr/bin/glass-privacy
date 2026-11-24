@@ -1,0 +1,53 @@
+#!/bin/sh
+# Switch the camera or microphone off for every app, and back on.
+#
+#   glass-privacy camera off|on|status   (off/on need admin rights: Settings runs it with sudo)
+#   glass-privacy mic off|on|status      (just for you, no admin rights needed)
+#
+# Camera off: the webcam driver (uvcvideo) is unloaded and stays unloaded across restarts, so no
+# app can open the camera at all until you switch it back on.
+# Microphone off: every microphone is muted, and stays muted (the top bar's privacy indicator
+# mutes any microphone that gets plugged in while it's off).
+set -u
+CAM_CONF=/etc/modprobe.d/glassos-camera-off.conf
+PRIV="${XDG_CONFIG_HOME:-$HOME/.config}/glassos/privacy.conf"
+
+mic_sources() {  # ids of every microphone PipeWire knows about
+  pw-dump 2>/dev/null | python3 -c '
+import json, sys
+for o in json.load(sys.stdin):
+    p = (o.get("info") or {}).get("props") or {}
+    if o.get("type") == "PipeWire:Interface:Node" and p.get("media.class") == "Audio/Source":
+        print(o["id"])'
+}
+
+case "${1:-}:${2:-}" in
+  camera:off)
+    [ "$(id -u)" = 0 ] || { echo "run with sudo" >&2; exit 1; }
+    printf '# Camera switched off in GlassOS Settings > Privacy & Security\nblacklist uvcvideo\ninstall uvcvideo /bin/false\n' > "$CAM_CONF"
+    if lsmod | grep -q '^uvcvideo'; then
+      modprobe -r uvcvideo 2>/dev/null || { echo "busy"; exit 2; }   # an app still has it open
+    fi
+    echo off ;;
+  camera:on)
+    [ "$(id -u)" = 0 ] || { echo "run with sudo" >&2; exit 1; }
+    rm -f "$CAM_CONF"
+    modprobe uvcvideo 2>/dev/null || true
+    echo on ;;
+  camera:status)
+    [ -f "$CAM_CONF" ] && echo off || echo on ;;
+  mic:off)
+    mkdir -p "$(dirname "$PRIV")"
+    { grep -v '^mic=' "$PRIV" 2>/dev/null; echo "mic=off"; } > "$PRIV.tmp" && mv "$PRIV.tmp" "$PRIV"
+    for id in $(mic_sources); do wpctl set-mute "$id" 1; done
+    echo off ;;
+  mic:on)
+    mkdir -p "$(dirname "$PRIV")"
+    { grep -v '^mic=' "$PRIV" 2>/dev/null; echo "mic=on"; } > "$PRIV.tmp" && mv "$PRIV.tmp" "$PRIV"
+    for id in $(mic_sources); do wpctl set-mute "$id" 0; done
+    echo on ;;
+  mic:status)
+    grep -q '^mic=off' "$PRIV" 2>/dev/null && echo off || echo on ;;
+  *)
+    echo "usage: glass-privacy camera|mic off|on|status" >&2; exit 1 ;;
+esac

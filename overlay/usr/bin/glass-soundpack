@@ -1,0 +1,254 @@
+#!/usr/bin/python3
+"""glass-soundpack - manage GlassOS sound packs
+
+  glass-soundpack list                     show installed packs (* = active)
+  glass-soundpack events                   every event name and when it plays
+  glass-soundpack new <name> [dir]         make a starter pack folder to fill with your sounds
+  glass-soundpack check <folder>           validate a pack before installing it
+  glass-soundpack install <folder> [--no-use]
+                                           copy a pack into ~/.local/share/glassos/soundpacks
+                                           and switch to it
+  glass-soundpack use <pack-id>            switch packs (also updates the boot sound)
+  glass-soundpack test [event|all]         play sounds from the active pack
+  glass-soundpack volume <0-100>           master volume for system sounds
+  glass-soundpack mute|unmute <event...>   silence or restore individual events
+  glass-soundpack off|on                   turn all system sounds off/on
+  glass-soundpack set-boot <pack-id>       (root) set the sound played at boot
+"""
+import os
+import shutil
+import subprocess
+import sys
+import time
+import wave
+
+sys.path.insert(0, "/usr/lib/glassos")
+import glasssound as gs  # noqa: E402
+
+
+def die(msg, code=1):
+    print(msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def cmd_list(_):
+    st = gs.Settings()
+    for pid, p in gs.all_packs().items():
+        mark = "*" if pid == st.pack else " "
+        where = "yours " if p.user else "system"
+        n = len(p.events_present())
+        print(f" {mark} {pid:24s} [{where}] {n:2d}/{len(gs.EVENTS)} sounds  {p.name}"
+              + (f" by {p.author}" if p.author else ""))
+    print(f"\nSounds are {'ON' if st.enabled else 'OFF'}, volume {int(st.volume * 100)}%"
+          + (f", muted: {', '.join(sorted(st.mute))}" if st.mute else ""))
+
+
+def cmd_events(_):
+    print("Name your files after these events (any of .wav .ogg .flac .mp3 .opus):\n")
+    for name, (desc, fb, _) in gs.EVENTS.items():
+        extra = f"   (falls back to: {', '.join(fb)})" if fb else ""
+        print(f"  {name:22s} {desc}{extra}")
+
+
+def cmd_new(args):
+    if not args:
+        die("usage: glass-soundpack new <name> [dir]")
+    name = args[0]
+    base = args[1] if len(args) > 1 else os.path.join(gs.HOME, "Music", "Sound Packs")
+    pid = "".join(c if c.isalnum() or c in "-_" else "-" for c in name.lower()).strip("-")
+    d = os.path.join(base, pid)
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "pack.ini"), "w") as f:
+        f.write(f"[pack]\nname = {name}\nauthor = {os.environ.get('USER', '')}\n"
+                "description = \nversion = 1.0\n"
+                "# Use another pack's sounds for any event you leave out (or delete this line)\n"
+                f"inherits = {gs.default_pack_name()}\n\n"
+                "# Optional per-event volume, 0.0 - 1.0\n[volume]\n# window-open = 0.6\n")
+    with open(os.path.join(d, "EVENTS.txt"), "w") as f:
+        f.write("Drop one audio file per event in this folder, named exactly like these\n"
+                "(boot.wav, notification.ogg, ...). Formats: wav ogg flac mp3 opus.\n\n")
+        for ev, (desc, fb, _) in gs.EVENTS.items():
+            f.write(f"{ev:22s} {desc}" + (f"  [falls back to {', '.join(fb)}]" if fb else "") + "\n")
+        f.write("\nWhen you're done:  glass-soundpack install \"" + d + "\"\n")
+    print(f"Created {d}\nPut your sounds in there, then run:  glass-soundpack install \"{d}\"")
+
+
+def duration(path):
+    if path.endswith(".wav"):
+        try:
+            with wave.open(path) as w:
+                return w.getnframes() / float(w.getframerate())
+        except Exception:
+            return None
+    if shutil.which("soxi"):
+        try:
+            return float(subprocess.check_output(["soxi", "-D", path], stderr=subprocess.DEVNULL))
+        except Exception:
+            return None
+    return None
+
+
+LONG_OK = {"boot": 8.0, "shutdown": 6.0, "login": 5.0, "logout": 4.0}
+
+
+def cmd_check(args, quiet=False):
+    if not args:
+        die("usage: glass-soundpack check <folder>")
+    d = os.path.abspath(args[0])
+    if not os.path.isdir(d):
+        die(f"not a folder: {d}")
+    p = gs.Pack(d)
+    present = p.events_present()
+    problems = 0
+    if not quiet:
+        print(f"Pack '{p.name}' ({len(present)}/{len(gs.EVENTS)} events)\n")
+    for ev in gs.EVENTS:
+        f = p.file_for(ev)
+        if not f:
+            continue
+        dur = duration(f)
+        note = ""
+        limit = LONG_OK.get(ev, 3.0)
+        if dur is not None and dur > limit:
+            note = f"  <- long ({dur:.1f}s); keep '{ev}' under {limit:.0f}s"
+            problems += 1
+        if not quiet:
+            print(f"  ok  {ev:22s} {os.path.basename(f)}" + (f"  {dur:.2f}s" if dur else "") + note)
+    missing = [e for e in gs.EVENTS if e not in present]
+    if not quiet and missing:
+        how = f"from '{p.inherits}'" if p.inherits else "silent"
+        print(f"\n  missing ({how}): {', '.join(missing)}")
+    for f in p.unknown_files():
+        print(f"  ??  {f}: not a known event name (see: glass-soundpack events)")
+        problems += 1
+    return p, problems
+
+
+def cmd_install(args):
+    if not args:
+        die("usage: glass-soundpack install <folder> [--no-use]")
+    src = os.path.abspath(args[0])
+    p, _ = cmd_check([src], quiet=True)
+    if not p.events_present():
+        die(f"{src} has no sounds named after GlassOS events (see: glass-soundpack events)")
+    dest = os.path.join(gs.USER_PACKS, p.id)
+    if os.path.abspath(dest) != src:
+        if os.path.exists(dest):
+            shutil.rmtree(dest)
+        shutil.copytree(src, dest)
+    print(f"Installed '{p.name}' -> {dest}")
+    if "--no-use" not in args:
+        cmd_use([p.id])
+
+
+def cmd_use(args):
+    if not args:
+        die("usage: glass-soundpack use <pack-id>")
+    pid = args[0]
+    pack = gs.find_pack(pid)
+    if not pack:
+        die(f"no pack '{pid}' (see: glass-soundpack list)")
+    st = gs.Settings()
+    st.pack = pid
+    st.save()
+    n = gs.build_sound_theme(pid)
+    print(f"Now using '{pack.name}' ({n} app sound mappings updated)")
+    boot = pack.file_for("boot")
+    if boot:
+        # The boot sound plays before anyone logs in, so it lives in a system folder.
+        r = subprocess.run(["sudo", "-n", "/usr/bin/glass-soundpack", "set-boot-file", boot],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if r.returncode == 0:
+            print("Boot sound updated.")
+        else:
+            print(f"To also change the boot sound, run:  sudo glass-soundpack set-boot-file \"{boot}\"")
+
+
+def cmd_set_boot_file(args):
+    if os.geteuid() != 0:
+        die("needs root: sudo glass-soundpack set-boot-file <file>")
+    if not args:
+        die("usage: glass-soundpack set-boot-file <file>")
+    # Only accept real audio files from a sound-pack folder or the calling user's home,
+    # never symlinks into other places (this runs as root).
+    src = os.path.realpath(args[0])
+    ext = os.path.splitext(src)[1].lower()
+    allowed = [gs.SYSTEM_PACKS + "/"]
+    sudo_user = os.environ.get("SUDO_USER")
+    if sudo_user:
+        import pwd
+        allowed.append(pwd.getpwnam(sudo_user).pw_dir.rstrip("/") + "/")
+    if ext not in gs.EXTS or not os.path.isfile(src) or not any(src.startswith(a) for a in allowed):
+        die("not a supported audio file inside a sound pack or your home folder")
+    os.makedirs(gs.BOOT_SOUND_DIR, exist_ok=True)
+    for f in os.listdir(gs.BOOT_SOUND_DIR):
+        if f.startswith("boot."):
+            os.remove(os.path.join(gs.BOOT_SOUND_DIR, f))
+    shutil.copyfile(src, os.path.join(gs.BOOT_SOUND_DIR, "boot" + ext))
+    os.chmod(os.path.join(gs.BOOT_SOUND_DIR, "boot" + ext), 0o644)
+
+
+def cmd_set_boot(args):
+    pack = gs.find_pack(args[0]) if args else None
+    if not pack or not pack.file_for("boot"):
+        die("pack not found or it has no boot sound")
+    cmd_set_boot_file([pack.file_for("boot")])
+
+
+def cmd_test(args):
+    target = args[0] if args else "all"
+    events = list(gs.EVENTS) if target == "all" else [target]
+    for ev in events:
+        f, vol = gs.resolve(ev)
+        print(f"  {ev:22s} {os.path.basename(f) if f else '(silent)'}")
+        if f:
+            gs.play_file(f, vol, wait=True)
+            time.sleep(0.25)
+
+
+def cmd_volume(args):
+    st = gs.Settings()
+    if args:
+        st.volume = max(0, min(100, int(args[0]))) / 100.0
+        st.save()
+    print(f"System sound volume: {int(st.volume * 100)}%")
+
+
+def cmd_mute(args, mute=True):
+    st = gs.Settings()
+    for ev in args:
+        if ev not in gs.EVENTS:
+            die(f"unknown event {ev}")
+        (st.mute.add if mute else st.mute.discard)(ev)
+    st.save()
+    gs.build_sound_theme()
+    print("Muted: " + (", ".join(sorted(st.mute)) or "nothing"))
+
+
+def cmd_onoff(on):
+    st = gs.Settings()
+    st.enabled = on
+    st.save()
+    print("System sounds " + ("on" if on else "off"))
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__)
+        return
+    c, rest = argv[0], argv[1:]
+    table = {
+        "list": cmd_list, "events": cmd_events, "new": cmd_new, "check": cmd_check,
+        "install": cmd_install, "use": cmd_use, "test": cmd_test, "volume": cmd_volume,
+        "set-boot": cmd_set_boot, "set-boot-file": cmd_set_boot_file,
+        "mute": lambda a: cmd_mute(a, True), "unmute": lambda a: cmd_mute(a, False),
+        "on": lambda a: cmd_onoff(True), "off": lambda a: cmd_onoff(False),
+        "rebuild-theme": lambda a: print(gs.build_sound_theme(a[0] if a else None)),
+    }
+    if c not in table:
+        die(__doc__, 2)
+    table[c](rest)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

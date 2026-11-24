@@ -1,0 +1,5 @@
+#!/bin/sh
+# Open the GlassOS Help guide (a local page) in Glass Browser, at an optional topic:
+#   glass-help [basics|apps|windows-apps|privacy|browser|shortcuts|sounds|hardware|trouble]
+page=/usr/share/glassos/help/index.html
+exec glass-browser "file://$page${1:+#$1}"

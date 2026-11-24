@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=App Store
+Comment=Find and install apps from Flathub
+Exec=glass-store
+Icon=glass-store
+Terminal=false
+Categories=System;PackageManager;GTK;
+Keywords=apps;install;software;store;flathub;flatpak;download;update;remove;uninstall;
+StartupWMClass=os.glass.Store

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GlassOS Help
+Comment=Getting around, getting apps, privacy, shortcuts and drivers
+Exec=glass-help
+Icon=help-browser
+Terminal=false
+Categories=System;GTK;
+Keywords=help;guide;docs;documentation;manual;how;apps;compatibility;windows;drivers;shortcuts;privacy;

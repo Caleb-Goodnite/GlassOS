@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=GlassOS
+Description=GlassOS boot splash: logo on a frosted wallpaper with a glass progress pill
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/glassos
+ScriptFile=/usr/share/plymouth/themes/glassos/glassos.script

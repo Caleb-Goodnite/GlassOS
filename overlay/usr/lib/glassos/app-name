@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""Top bar app name: prints the name of the focused app for Waybar, one JSON line per change.
+
+The name comes from the app's .desktop file (the same name its launcher shows), so apps from
+the App Store read "Firefox" rather than "org.mozilla.firefox". Listens to Hyprland's event
+socket, so it costs nothing while the focus stays put.
+"""
+import configparser
+import json
+import os
+import socket
+import sys
+import time
+
+# Apps whose launcher name is longer than the top bar needs
+SHORT = {
+    "foot": "Terminal",
+    "thunar": "Files",
+    "org.xfce.mousepad": "Text Editor",
+    "imv": "Image Viewer",
+    "firefox-esr": "Firefox",
+}
+_cache = {}
+
+
+def data_dirs():
+    home = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
+    dirs = [home, os.path.join(home, "flatpak/exports/share"), "/var/lib/flatpak/exports/share"]
+    dirs += (os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share").split(":")
+    return [os.path.join(d, "applications") for d in dict.fromkeys(dirs) if d]
+
+
+def desktop_name(path):
+    cp = configparser.ConfigParser(interpolation=None, strict=False)
+    try:
+        cp.read(path, encoding="utf-8")
+        return cp.get("Desktop Entry", "Name", fallback="").strip()
+    except (configparser.Error, OSError, UnicodeDecodeError):
+        return ""
+
+
+def lookup(cls):
+    low = cls.lower()
+    if low in SHORT:
+        return SHORT[low]
+    dirs = [d for d in data_dirs() if os.path.isdir(d)]
+    # 1. a launcher named after the app id (most Wayland and Flatpak apps)
+    for d in dirs:
+        for f in os.listdir(d):
+            if f.lower() == low + ".desktop":
+                name = desktop_name(os.path.join(d, f))
+                if name:
+                    return name
+    # 2. a launcher that declares this window class
+    for d in dirs:
+        for f in os.listdir(d):
+            if not f.endswith(".desktop"):
+                continue
+            path = os.path.join(d, f)
+            try:
+                with open(path, encoding="utf-8", errors="ignore") as fh:
+                    text = fh.read()
+            except OSError:
+                continue
+            if f"StartupWMClass={cls}\n" in text or f"StartupWMClass={cls}\r" in text:
+                name = desktop_name(path)
+                if name:
+                    return name
+    # 3. loose match, for apps whose window class doesn't follow their launcher's id
+    #    (an App Store app "org.tuxpaint.Tuxpaint" whose window says "TuxPaint.TuxPaint")
+    want = {squash(cls), squash(cls.rsplit(".", 1)[-1])} - {""}
+    for d in dirs:
+        for f in os.listdir(d):
+            if f.endswith(".desktop"):
+                name = desktop_name(os.path.join(d, f))
+                if name and want & {squash(f[:-8].rsplit(".", 1)[-1]), squash(name)}:
+                    return name
+    # 4. last part of a reverse-DNS id, tidied: "com.example.PhotoTool" -> "PhotoTool"
+    return cls.rsplit(".", 1)[-1].replace("-", " ").replace("_", " ")
+
+
+def squash(text):
+    """'org.tuxpaint.Tuxpaint' and 'Tux Paint' both become 'tuxpaint', for loose matching."""
+    return "".join(ch for ch in (text or "").lower() if ch.isalnum())
+
+
+def name_for(cls):
+    if not cls:
+        return ""
+    if cls not in _cache:
+        _cache[cls] = lookup(cls)
+    return _cache[cls]
+
+
+def hypr_dir():
+    run = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "")
+    return os.path.join(run, "hypr", sig)
+
+
+def active_class():
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.settimeout(2)
+        s.connect(os.path.join(hypr_dir(), ".socket.sock"))
+        s.sendall(b"j/activewindow")
+        out = b""
+        while chunk := s.recv(65536):
+            out += chunk
+        return (json.loads(out or b"{}") or {}).get("class", "")
+    except (OSError, ValueError):
+        return ""
+    finally:
+        s.close()
+
+
+def emit(cls, last):
+    name = name_for(cls)
+    if name != last:
+        print(json.dumps({"text": name, "tooltip": ""}), flush=True)
+    return name
+
+
+def main():
+    last = emit(active_class(), None)
+    while True:
+        try:
+            ev = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            ev.connect(os.path.join(hypr_dir(), ".socket2.sock"))
+            buf = b""
+            while chunk := ev.recv(4096):
+                buf += chunk
+                *lines, buf = buf.split(b"\n")
+                for line in lines:
+                    # activewindow>>CLASS,TITLE (both empty when nothing has focus)
+                    if line.startswith(b"activewindow>>"):
+                        cls = line[len(b"activewindow>>"):].decode(errors="replace").split(",", 1)[0]
+                        last = emit(cls, last)
+        except OSError:
+            pass
+        time.sleep(2)  # Hyprland restarting; reconnect
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (KeyboardInterrupt, BrokenPipeError):
+        sys.exit(0)

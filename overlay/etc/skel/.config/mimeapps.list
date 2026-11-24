@@ -1,0 +1,11 @@
+[Default Applications]
+text/html=os.glass.Browser.desktop
+application/xhtml+xml=os.glass.Browser.desktop
+x-scheme-handler/http=os.glass.Browser.desktop
+x-scheme-handler/https=os.glass.Browser.desktop
+inode/directory=thunar.desktop
+text/plain=org.xfce.mousepad.desktop
+image/png=imv.desktop
+image/jpeg=imv.desktop
+image/webp=imv.desktop
+image/gif=imv.desktop

@@ -1,0 +1,12 @@
+#!/bin/sh
+# glass-launch <command...>
+# Starts an app inside its own systemd scope (app-glass-<name>-<pid>.scope) so its CPU,
+# memory and disk use are accounted separately and shown by name in Glass Lens.
+[ $# -gt 0 ] || { echo "usage: glass-launch <command...>" >&2; exit 2; }
+
+name="$(basename "$1" | tr -c 'A-Za-z0-9_.\n-' '-' | cut -c1-40)"
+if systemctl --user show-environment >/dev/null 2>&1; then
+  exec systemd-run --user --scope --quiet --collect --slice=app.slice \
+    --unit="app-glass-${name}-$$" -- "$@"
+fi
+exec "$@"

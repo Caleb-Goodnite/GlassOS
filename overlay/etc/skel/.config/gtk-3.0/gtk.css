@@ -1,0 +1,45 @@
+/* GlassOS "Prism" glass for GTK 3 apps (Files, Text Editor, ...).
+   Translucent surfaces let the compositor's frosted blur show through. */
+@define-color glass_bg alpha(#181924, 0.80);
+@define-color glass_view alpha(#12131c, 0.50);
+@define-color glass_rim alpha(#ffffff, 0.14);
+
+window.background, window.background.csd { background-color: @glass_bg; }
+
+headerbar, .titlebar:not(headerbar), .titlebar headerbar {
+  background: alpha(#ffffff, 0.05);
+  border-bottom: 1px solid alpha(#ffffff, 0.07);
+  box-shadow: inset 0 1px alpha(#ffffff, 0.10);
+}
+headerbar:backdrop, .titlebar:backdrop { background: alpha(#ffffff, 0.03); }
+
+.view, iconview, treeview.view, textview text, .sidebar, placessidebar, scrolledwindow viewport {
+  background-color: @glass_view;
+}
+.view:selected, iconview:selected, treeview.view:selected, row:selected {
+  background-color: alpha(#7fb6ff, 0.35);
+  border-radius: 8px;
+}
+menubar, toolbar, .toolbar, statusbar { background: transparent; }
+
+popover, popover.background, menu, .menu, .context-menu {
+  background-color: alpha(#20212e, 0.90);
+  border: 1px solid @glass_rim;
+  border-radius: 12px;
+}
+
+/* Window buttons: small frosted dots (left side), tinted on hover */
+headerbar button.titlebutton, .titlebar button.titlebutton {
+  min-width: 14px; min-height: 14px; padding: 0; margin: 0 3px;
+  border-radius: 99px;
+  background: alpha(#ffffff, 0.20);
+  border: 1px solid alpha(#ffffff, 0.28);
+  box-shadow: none;
+  color: transparent;
+  -gtk-icon-shadow: none;
+}
+headerbar button.titlebutton:hover, .titlebar button.titlebutton:hover { color: #ffffff; background: alpha(#ffffff, 0.40); }
+headerbar button.titlebutton.close:hover, .titlebar button.titlebutton.close:hover { background: alpha(#ff6b81, 0.85); }
+
+button { border-radius: 9px; }
+entry { border-radius: 9px; }

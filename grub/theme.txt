@@ -1,0 +1,76 @@
+# GlassOS GRUB theme. Fonts are named the way grub-mkfont stored them.
+title-text: ""
+desktop-image: "background.jpg"
+desktop-image-scale-method: "crop"
+desktop-color: "#0d0e16"
+terminal-font: "DejaVu Sans Mono Regular 16"
+terminal-box: "menu_*.png"
+terminal-left: "10%"
+terminal-top: "12%"
+terminal-width: "80%"
+terminal-height: "76%"
+terminal-border: "0"
+
++ image {
+  left = 50%-56
+  top = 13%
+  file = "logo.png"
+}
++ label {
+  left = 0
+  top = 13%+124
+  width = 100%
+  align = "center"
+  text = "GlassOS"
+  font = "Inter Bold Bold 40"
+  color = "#ffffff"
+}
++ boot_menu {
+  left = 50%-300
+  top = 13%+200
+  width = 600
+  height = 50%
+  item_font = "Inter Regular Regular 20"
+  item_color = "#c9cbd8"
+  selected_item_font = "Inter SemiBold Regular 20"
+  selected_item_color = "#ffffff"
+  item_height = 40
+  item_padding = 14
+  item_spacing = 14
+  icon_width = 0
+  icon_height = 0
+  item_icon_space = 0
+  menu_pixmap_style = "menu_*.png"
+  selected_item_pixmap_style = "select_*.png"
+  scrollbar = false
+}
++ progress_bar {
+  id = "__timeout__"
+  left = 50%-160
+  top = 89%
+  width = 320
+  height = 4
+  fg_color = "#e8e9f0"
+  bg_color = "#3a3d52"
+  border_color = "#3a3d52"
+  text = ""
+}
++ label {
+  id = "__timeout__"
+  left = 0
+  top = 89%+12
+  width = 100%
+  align = "center"
+  font = "Inter Regular Regular 16"
+  color = "#c9ccdb"
+  text = "@TIMEOUT_NOTIFICATION_MIDDLE@"
+}
++ label {
+  left = 0
+  top = 95%
+  width = 100%
+  align = "center"
+  text = "Arrow keys to choose  ·  Enter to start  ·  E to edit"
+  font = "Inter Regular Regular 16"
+  color = "#8a8ea6"
+}

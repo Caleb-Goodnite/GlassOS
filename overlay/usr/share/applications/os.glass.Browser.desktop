@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=Glass Browser
+GenericName=Web Browser
+Comment=Browse the web privately
+Exec=glass-browser %U
+Icon=web-browser
+Terminal=false
+Categories=Network;WebBrowser;GTK;
+MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
+Keywords=internet;web;www;browser;
+StartupWMClass=os.glass.Browser
+Actions=private;
+
+[Desktop Action private]
+Name=New Private Window
+Exec=glass-browser --private

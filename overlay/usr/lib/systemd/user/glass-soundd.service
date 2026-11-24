@@ -1,0 +1,9 @@
+[Unit]
+Description=GlassOS sound daemon (plays your sound pack for device, power and network events)
+Documentation=file:///usr/share/glassos/soundpacks/README.md
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/lib/glassos/glass-soundd
+Restart=on-failure
+RestartSec=3

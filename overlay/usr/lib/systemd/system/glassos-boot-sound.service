@@ -1,0 +1,14 @@
+[Unit]
+Description=GlassOS boot sound (plays the "boot" sound from your sound pack)
+Documentation=file:///usr/share/glassos/soundpacks/README.md
+After=sound.target alsa-restore.service systemd-udev-trigger.service
+Before=greetd.service display-manager.service
+ConditionPathExists=!/etc/glassos/no-boot-sound
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/glassos/boot-sound
+TimeoutStartSec=12
+
+[Install]
+WantedBy=multi-user.target

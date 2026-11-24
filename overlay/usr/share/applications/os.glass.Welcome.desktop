@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Welcome to GlassOS
+Comment=Shortcuts, principles and how to make GlassOS yours
+Exec=glass-lens --page welcome
+Icon=glassos
+Terminal=false
+Categories=System;GTK;
+Keywords=help;shortcuts;keyboard;getting started;about;
+StartupWMClass=os.glass.Lens

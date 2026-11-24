@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Calculator
+Comment=Add, subtract, multiply and divide
+Exec=glass-calculator
+Icon=accessories-calculator
+Terminal=false
+Categories=Utility;Calculator;GTK;
+Keywords=math;calc;sum;percent;
+StartupWMClass=os.glass.Calculator

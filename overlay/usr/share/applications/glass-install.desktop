@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Install GlassOS
+Comment=Put GlassOS on this computer's disk
+Exec=foot --title "Install GlassOS" -e sudo glass-install
+Icon=glassos
+Terminal=false
+Categories=System;
+Keywords=installer;setup;disk;

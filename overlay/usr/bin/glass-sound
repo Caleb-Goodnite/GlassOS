@@ -1,0 +1,32 @@
+#!/usr/bin/python3
+"""glass-sound <event> [--wait]     play an event from your active sound pack
+   glass-sound --file <path>        play any audio file at your sound volume
+   glass-sound --list               list event names"""
+import sys
+
+sys.path.insert(0, "/usr/lib/glassos")
+import glasssound as gs  # noqa: E402
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0
+    wait = "--wait" in argv
+    args = [a for a in argv if a != "--wait"]
+    if args[0] == "--list":
+        for name, (desc, _, _) in gs.EVENTS.items():
+            print(f"{name:22s} {desc}")
+        return 0
+    if args[0] == "--file" and len(args) > 1:
+        return 0 if gs.play_file(args[1], gs.Settings().volume, wait) else 1
+    event = args[0]
+    if event not in gs.EVENTS:
+        print(f"unknown event '{event}' (see: glass-sound --list)", file=sys.stderr)
+        return 2
+    gs.play(event, wait)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

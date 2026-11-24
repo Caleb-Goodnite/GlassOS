@@ -1,0 +1,9 @@
+#!/bin/sh
+# Start the GlassOS dock. gtk4-layer-shell must be loaded before GTK/Wayland in Python.
+for lib in /usr/lib/*/libgtk4-layer-shell.so.0 /usr/lib/libgtk4-layer-shell.so.0; do
+  if [ -e "$lib" ]; then
+    export LD_PRELOAD="$lib${LD_PRELOAD:+:$LD_PRELOAD}"
+    break
+  fi
+done
+exec python3 /usr/lib/glassos/dock/dock.py "$@"

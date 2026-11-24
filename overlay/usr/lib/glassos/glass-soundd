@@ -1,0 +1,222 @@
+#!/usr/bin/python3
+"""GlassOS sound daemon (runs as your user, started with the desktop).
+
+Listens for system events and plays the matching sound from your pack:
+  USB plug/unplug, charger plug/unplug, low battery, network up/down,
+  crashed background services, and a nearly full disk.
+For the last two it also shows a plain-English notification, because GlassOS
+never hides problems from you.
+"""
+import os
+import shutil
+import subprocess
+import sys
+import threading
+import time
+
+sys.path.insert(0, "/usr/lib/glassos")
+import glasssound as gs  # noqa: E402
+
+import gi  # noqa: E402
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib  # noqa: E402
+
+START = time.monotonic()
+QUIET_START = 6.0  # don't chime for things that are just being detected at login
+_last = {}
+
+
+def play(event, min_gap=0.6):
+    now = time.monotonic()
+    if now - START < QUIET_START:
+        return
+    if now - _last.get(event, 0) < min_gap:
+        return
+    _last[event] = now
+    gs.play(event)
+
+
+def notify(summary, body, urgency=1, icon="dialog-information"):
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                      "org.freedesktop.Notifications", "Notify",
+                      GLib.Variant("(susssasa{sv}i)", ("GlassOS", 0, icon, summary, body, [],
+                                                       {"urgency": GLib.Variant("y", urgency)}, -1)),
+                      None, Gio.DBusCallFlags.NONE, 2000, None)
+    except Exception:
+        pass
+
+
+# --- USB devices ---------------------------------------------------------------------
+def watch_usb():
+    try:
+        import pyudev
+    except ImportError:
+        return
+    ctx = pyudev.Context()
+    mon = pyudev.Monitor.from_netlink(ctx)
+    mon.filter_by(subsystem="usb", device_type="usb_device")
+
+    def handle(action, device):
+        if action == "add":
+            GLib.idle_add(play, "device-added")
+        elif action == "remove":
+            GLib.idle_add(play, "device-removed")
+
+    obs = pyudev.MonitorObserver(mon, handle)
+    obs.daemon = True
+    obs.start()
+    return obs
+
+
+# --- power ---------------------------------------------------------------------------
+PS = "/sys/class/power_supply"
+_power = {"ac": None, "low": False, "critical": False}
+
+
+def read(path, default=None):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return default
+
+
+def poll_power():
+    if not os.path.isdir(PS):
+        return True
+    ac = None
+    caps = []
+    discharging = False
+    for d in os.listdir(PS):
+        t = read(f"{PS}/{d}/type")
+        if t == "Mains":
+            ac = (ac or False) or read(f"{PS}/{d}/online") == "1"
+        elif t == "Battery" and read(f"{PS}/{d}/scope", "System") != "Device":
+            c = read(f"{PS}/{d}/capacity")
+            if c and c.isdigit():
+                caps.append(int(c))
+            discharging = discharging or read(f"{PS}/{d}/status") == "Discharging"
+    if ac is not None and _power["ac"] is not None and ac != _power["ac"]:
+        play("power-plugged" if ac else "power-unplugged")
+    _power["ac"] = ac
+    if caps and discharging:
+        cap = min(caps)
+        if cap <= 5 and not _power["critical"]:
+            _power["critical"] = True
+            play("battery-critical")
+            notify("Battery almost empty", f"{cap}% left. Plug in now to avoid losing work.", 2, "battery-empty")
+        elif cap <= 15 and not _power["low"]:
+            _power["low"] = True
+            play("battery-low")
+            notify("Battery low", f"{cap}% left.", 1, "battery-low")
+    if caps and (not discharging or min(caps) > 20):
+        _power["low"] = _power["critical"] = False
+    return True
+
+
+# --- network (NetworkManager over D-Bus) ---------------------------------------------
+_net = {"connected": None}
+
+
+def on_nm_state(_conn, _sender, _path, _iface, _signal, params, *_):
+    state = params.unpack()[0]
+    connected = state >= 50  # NM_STATE_CONNECTED_LOCAL and above
+    if _net["connected"] is not None and connected != _net["connected"]:
+        play("network-connected" if connected else "network-disconnected", 2.0)
+    _net["connected"] = connected
+
+
+def watch_network():
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        res = bus.call_sync("org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager",
+                            "org.freedesktop.DBus.Properties", "Get",
+                            GLib.Variant("(ss)", ("org.freedesktop.NetworkManager", "State")),
+                            None, Gio.DBusCallFlags.NONE, 2000, None)
+        _net["connected"] = res.unpack()[0] >= 50
+        bus.signal_subscribe("org.freedesktop.NetworkManager", "org.freedesktop.NetworkManager",
+                             "StateChanged", "/org/freedesktop/NetworkManager", None,
+                             Gio.DBusSignalFlags.NONE, on_nm_state)
+    except Exception:
+        pass
+
+
+# --- crashed services ----------------------------------------------------------------
+_failed = None
+
+
+def failed_units():
+    out = set()
+    for scope in ([], ["--user"]):
+        try:
+            r = subprocess.run(["systemctl", *scope, "--failed", "--plain", "--no-legend", "--no-pager"],
+                               capture_output=True, text=True, timeout=5)
+            for line in r.stdout.splitlines():
+                if line.strip():
+                    out.add(line.split()[0])
+        except Exception:
+            pass
+    return out
+
+
+def describe(unit):
+    try:
+        r = subprocess.run(["systemctl", "show", "-p", "Description", "--value", unit],
+                           capture_output=True, text=True, timeout=3)
+        return r.stdout.strip() or unit
+    except Exception:
+        return unit
+
+
+def poll_failed():
+    global _failed
+    now = failed_units()
+    if _failed is not None:
+        for unit in sorted(now - _failed):
+            play("service-failed", 5.0)
+            notify("A background service stopped working",
+                   f"{describe(unit)} ({unit}) crashed or failed to start.\n"
+                   "Open Glass Lens > Apps & Services to see details.", 1, "dialog-warning")
+    _failed = now
+    return True
+
+
+# --- disk space ----------------------------------------------------------------------
+_disk_warned = set()
+
+
+def poll_disk():
+    for mount in ("/", os.path.expanduser("~")):
+        try:
+            u = shutil.disk_usage(mount)
+        except OSError:
+            continue
+        if u.total < 2 * 1024 ** 3:   # ignore tiny/overlay mounts (live session RAM disk)
+            continue
+        pct = u.used / u.total
+        key = os.stat(mount).st_dev
+        if pct > 0.95 and key not in _disk_warned:
+            _disk_warned.add(key)
+            play("disk-full", 10)
+            notify("Your disk is almost full", f"{mount} is {pct:.0%} full "
+                   f"({u.free / 1024 ** 3:.1f} GB free).", 1, "drive-harddisk")
+        elif pct < 0.9:
+            _disk_warned.discard(key)
+    return True
+
+
+def main():
+    watch_usb()
+    watch_network()
+    poll_power()
+    poll_failed()
+    GLib.timeout_add_seconds(5, poll_power)
+    GLib.timeout_add_seconds(15, poll_failed)
+    GLib.timeout_add_seconds(60, poll_disk)
+    GLib.MainLoop().run()
+
+
+if __name__ == "__main__":
+    main()

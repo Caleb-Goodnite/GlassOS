@@ -1,0 +1,16 @@
+#!/bin/sh
+# glass-autologin on|off [user]   - log in automatically at startup (or stop doing that)
+set -e
+[ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
+state="$1"; user="${2:-${SUDO_USER:-}}"
+conf=/etc/greetd/config.toml
+[ -n "$user" ] && id "$user" >/dev/null 2>&1 || { echo "usage: glass-autologin on|off USER"; exit 1; }
+# drop any existing [initial_session] block
+awk 'BEGIN{skip=0} /^\[initial_session\]/{skip=1; next} /^\[/{skip=0} !skip' "$conf" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > "$conf.new"
+if [ "$state" = on ]; then
+  printf '\n[initial_session]\ncommand = "glass-session"\nuser = "%s"\n' "$user" >> "$conf.new"
+  echo "Automatic login is on for $user."
+else
+  echo "Automatic login is off. You'll be asked for your password at startup."
+fi
+mv "$conf.new" "$conf"

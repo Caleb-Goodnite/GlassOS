@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GlassOS Help</title>
+<!-- A local file (/usr/share/glassos/help/index.html). It loads nothing from the web.
+     Opened by "GlassOS Help" in the app search and the GlassOS menu. -->
+<style>
+  :root { color-scheme: dark; --edge: rgba(255,255,255,.16); --text: #f2f3f8; --dim: rgba(255,255,255,.86); }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body {
+    margin: 0; font-family: Inter, "DejaVu Sans", sans-serif; color: var(--text); line-height: 1.55;
+    background: #0d0e16 url("../wallpapers/prism.jpg") center / cover fixed;
+  }
+  html.glass body { background: transparent; }
+  .wrap { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 28px; max-width: 1060px;
+          margin: 0 auto; padding: 36px 24px 60px; }
+  header { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; }
+  header img { width: 52px; height: 52px; }
+  h1 { font-size: 34px; font-weight: 800; margin: 0; letter-spacing: -.02em; }
+  header p { margin: 2px 0 0; color: var(--dim); }
+  nav { position: sticky; top: 16px; align-self: start; padding: 10px; border-radius: 16px;
+        background: rgba(16,17,26,.55); border: 1px solid var(--edge); }
+  nav ul { list-style: none; margin: 0; padding: 0; }
+  nav a { display: block; padding: 10px 12px; min-height: 44px; border-radius: 10px; color: var(--dim);
+          text-decoration: none; }
+  nav a:hover { background: rgba(255,255,255,.08); color: #fff; }
+  nav a:active { background: rgba(255,255,255,.14); }
+  a:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  a { cursor: pointer; color: #9cc4ff; }
+  main section { padding: 6px 26px 18px; margin-bottom: 18px; border-radius: 18px;
+                 background: rgba(16,17,26,.6); border: 1px solid var(--edge); border-top-color: rgba(255,255,255,.28); }
+  h2 { font-size: 21px; margin: 18px 0 6px; }
+  h3 { font-size: 16px; margin: 18px 0 4px; }
+  p, li { color: var(--dim); }
+  ul.list { padding-left: 20px; }
+  ul.list li { margin: 4px 0; }
+  b, strong { color: #fff; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; margin: 6px 0 10px; }
+  th { text-align: left; font-size: 13px; color: #fff; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--edge); }
+  td { padding: 7px 12px 7px 0; color: var(--dim); vertical-align: top; border-bottom: 1px solid rgba(255,255,255,.06); }
+  td:first-child { white-space: nowrap; }
+  kbd, code {
+    font-family: "JetBrains Mono", monospace; font-size: 13px; padding: 1px 6px; border-radius: 6px;
+    background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2); color: #fff;
+  }
+  kbd { font-family: inherit; }
+  .swatch { display: inline-block; width: 11px; height: 11px; border-radius: 6px; margin-right: 6px; vertical-align: 0; }
+  footer { grid-column: 2; font-size: 13px; color: rgba(255,255,255,.78); }
+  @media (max-width: 760px) {
+    .wrap { grid-template-columns: minmax(0, 1fr); padding: 24px 14px 48px; }
+    nav { position: static; }
+    nav ul { display: flex; flex-wrap: wrap; gap: 4px; }
+    footer { grid-column: 1; }
+    main section { padding: 4px 16px 14px; }
+    td:first-child { white-space: normal; }
+    h1 { font-size: 28px; }
+  }
+</style>
+</head>
+<body>
+<script>if (location.hash === "#glass" || new URLSearchParams(location.search).has("glass")) document.documentElement.classList.add("glass");</script>
+<div class="wrap">
+  <header>
+    <img src="../logo.png" alt="" width="52" height="52">
+    <div>
+      <h1>GlassOS Help</h1>
+      <p>How to get around, get apps, and keep control of your computer.</p>
+    </div>
+  </header>
+
+  <nav aria-label="Help topics">
+    <ul>
+      <li><a href="#basics">The basics</a></li>
+      <li><a href="#apps">Getting apps</a></li>
+      <li><a href="#windows-apps">Windows apps and games</a></li>
+      <li><a href="#privacy">Privacy</a></li>
+      <li><a href="#browser">Glass Browser</a></li>
+      <li><a href="#shortcuts">Keyboard shortcuts</a></li>
+      <li><a href="#sounds">Sound packs</a></li>
+      <li><a href="#hardware">Drivers and hardware</a></li>
+      <li><a href="#trouble">When something goes wrong</a></li>
+    </ul>
+  </nav>
+
+  <main>
+    <section id="basics" aria-labelledby="basics-h">
+      <h2 id="basics-h">The basics</h2>
+      <ul class="list">
+        <li><b>The GlassOS logo</b> in the top-left corner opens the main menu: About This Computer, Settings,
+          App Store, Help, Lock, Log Out, Restart and Shut Down.</li>
+        <li><b>The dock</b> at the bottom holds your favourite apps. A dot under an icon means the app is open.
+          Right-click an app in the dock and choose Keep in Dock or Remove from Dock.</li>
+        <li><b>Search</b> with <kbd>Super</kbd> + <kbd>Space</kbd>. Type part of an app's name and press
+          <kbd>Enter</kbd>. Super is the key with the Windows logo, or <kbd>⌘</kbd> on a Mac keyboard.</li>
+        <li><b>Move a window</b> by dragging its title bar. <b>Resize</b> it by dragging any edge or corner.
+          You can also hold <kbd>Super</kbd> and drag anywhere in a window to move it, or right-drag to resize it.</li>
+        <li><b>Desktops:</b> <kbd>Super</kbd> + <kbd>1</kbd> to <kbd>9</kbd> switches between nine desktops, and
+          <kbd>Super</kbd> + <kbd>Shift</kbd> + a number moves the current window there.</li>
+        <li><b>Shutting down</b> always asks first. Choose Shut Down from the logo menu, or press
+          <kbd>Super</kbd> + <kbd>Alt</kbd> + <kbd>Backspace</kbd>. A dialog counts down from 60 seconds, and
+          Cancel, <kbd>Esc</kbd> or a click outside it stops it.</li>
+      </ul>
+    </section>
+
+    <section id="apps" aria-labelledby="apps-h">
+      <h2 id="apps-h">Getting apps</h2>
+      <p>Open <b>App Store</b> from the dock or the app search. It lists the apps on
+        <a href="https://flathub.org">Flathub</a>, the largest catalogue of desktop Linux apps, run by a
+        community foundation. Apps install for your account only and don't need an admin password.</p>
+      <ul class="list">
+        <li><b>Verified</b> next to a developer's name means Flathub has checked that the app is published by the
+          people who make it.</li>
+        <li><b>What the app can reach</b> is listed on its page before you install it, in plain words: your files,
+          the network, the microphone, and so on. You can switch any of these off later on the app's page under
+          Installed.</li>
+        <li><b>Updates</b> only happen when you press Update. Nothing installs in the background.</li>
+        <li><b>Removing</b> an app removes it completely. Its saved data stays in your home folder (in
+          <code>.var/app</code>) in case you install it again; the app's page offers to delete that too.</li>
+      </ul>
+      <h3>What the App Store sends</h3>
+      <p>While it's open, the App Store downloads the catalogue, icons and screenshots from flathub.org, and
+        installing downloads the app from there. Flathub counts how many times each app is downloaded. It doesn't
+        get an account, a name or an email address, because there isn't one. When the App Store is closed it does
+        nothing.</p>
+      <h3>Other ways to install</h3>
+      <ul class="list">
+        <li><b>Debian packages:</b> GlassOS is built on Debian 13, so anything packaged for Debian installs with
+          <code>sudo apt install name</code> in the Terminal. These are system-wide and need your password.</li>
+        <li><b>Firefox</b> is already installed, for sites that don't work in Glass Browser.</li>
+        <li><b>AppImages</b> (single-file apps some developers offer) run after you mark them executable:
+          right-click in Files, Properties, Permissions.</li>
+      </ul>
+      <h3>Will my app work?</h3>
+      <p>Most open-source apps do: LibreOffice, GIMP, Inkscape, Krita, Blender, VLC, OBS Studio, Audacity, Signal,
+        Thunderbird. Many commercial ones are on Flathub too, such as Spotify, Zoom, Slack, Discord and Steam.
+        Some aren't made for Linux at all, including Microsoft Office (use the web version in a browser) and Adobe's
+        apps (Photopea, GIMP, Krita and Inkscape cover a lot of the same ground).</p>
+      <p>On a computer with an ARM processor, including a Mac running GlassOS in a virtual machine, some Flathub
+        apps aren't available because their makers only publish them for Intel and AMD processors. The App Store
+        only shows apps that can run on your computer.</p>
+    </section>
+
+    <section id="windows-apps" aria-labelledby="win-h">
+      <h2 id="win-h">Windows apps and games</h2>
+      <ul class="list">
+        <li><b>Games:</b> install <b>Steam</b> from the App Store. Steam's Proton runs a large share of Windows
+          games; check a game on <a href="https://www.protondb.com">ProtonDB</a> before you buy it. Games whose
+          anti-cheat doesn't support Linux won't run. Steam is available on Intel and AMD computers only.</li>
+        <li><b>Other Windows programs:</b> install <b>Bottles</b> from the App Store. It runs Windows programs
+          through Wine. Plenty of older and simpler programs work; programs with strict copy protection, device
+          drivers, or deep links to Windows usually don't.</li>
+        <li>If a program you depend on doesn't run, a Linux alternative or the program's web version is usually
+          the more reliable path.</li>
+      </ul>
+    </section>
+
+    <section id="privacy" aria-labelledby="priv-h">
+      <h2 id="priv-h">Privacy</h2>
+      <p>GlassOS has no telemetry, no advertising ID, no online account and no location service. This is every
+        connection the system makes on its own:</p>
+      <table>
+        <thead><tr><th scope="col">What</th><th scope="col">Where to</th><th scope="col">When</th></tr></thead>
+        <tbody>
+          <tr><td>Clock</td><td>Debian's public time servers (debian.pool.ntp.org)</td><td>Now and then, to keep the time right. Secure websites need a correct clock.</td></tr>
+          <tr><td>Updates</td><td>Debian's servers (deb.debian.org)</td><td>Only when you run Software Updates.</td></tr>
+          <tr><td>App Store</td><td>flathub.org</td><td>Only while the App Store is open, or an app is installing.</td></tr>
+          <tr><td>Web search</td><td>DuckDuckGo</td><td>Only when you search from the browser's address bar.</td></tr>
+        </tbody>
+      </table>
+      <p>Glass Lens shows every live connection on its Network page, so you can check this list yourself.</p>
+      <h3>The top bar shows what's in use</h3>
+      <p>An icon appears in the top bar whenever something is using your
+        <span class="swatch" style="background:#5fe3a1" aria-hidden="true"></span><b>camera</b>,
+        <span class="swatch" style="background:#ffb15c" aria-hidden="true"></span><b>microphone</b>,
+        <span class="swatch" style="background:#7fb6ff" aria-hidden="true"></span><b>screen</b> or
+        <span class="swatch" style="background:#e8e9f0" aria-hidden="true"></span><b>speakers</b>. Point at it to see
+        which app. Click it to open <b>Settings, Privacy &amp; Security</b>, where you can:</p>
+      <ul class="list">
+        <li>quit the app that's using something, with one button;</li>
+        <li>switch the camera off for every app (the webcam driver is unloaded, so nothing can turn it on until you
+          switch it back);</li>
+        <li>switch the microphone off for every app (every microphone is kept muted, including ones you plug in
+          later).</li>
+      </ul>
+      <p>Apps from the App Store also have their own switches: open the app's page under Installed.</p>
+    </section>
+
+    <section id="browser" aria-labelledby="browser-h">
+      <h2 id="browser-h">Glass Browser</h2>
+      <ul class="list">
+        <li><b>Cookies</b> are kept, so sites remember that you're logged in. Cookies from other sites embedded in
+          a page (third-party cookies, mostly used for tracking) are blocked.</li>
+        <li><b>Private windows</b> (<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd>) keep nothing after you close them.</li>
+        <li><b>Passwords</b> aren't saved by Glass Browser yet. Firefox, which is also installed, can save them, and
+          so can a password manager such as Bitwarden or KeePassXC from the App Store.</li>
+      </ul>
+    </section>
+
+    <section id="shortcuts" aria-labelledby="keys-h">
+      <h2 id="keys-h">Keyboard shortcuts</h2>
+      <p>On a Mac keyboard, <kbd>⌘</kbd> is Super and <kbd>Option</kbd> is Alt.</p>
+      <table>
+        <tbody>
+          <tr><td><kbd>Super</kbd> + <kbd>Space</kbd></td><td>Search for an app and open it</td></tr>
+          <tr><td><kbd>Super</kbd> + <kbd>Return</kbd></td><td>Terminal</td></tr>
+          <tr><td><kbd>Super</kbd> + <kbd>E</kbd></td><td>Files</td></tr>
+          <tr><td><kbd>Super</kbd> + <kbd>B</kbd></td><td>Web browser</td></tr>
+          <tr><td><kbd>Super</kbd> + <kbd>I</kbd></td><td>Settings</td></tr>
+          <tr><td><kbd>Super</kbd> + <kbd>U</kbd></td><td>Glass Lens: what's running and what it uses</td></tr>
+          <tr><td><kbd>Super</kbd> + <kbd>Q</kbd></td><td>Close the window</td></tr>
+          <tr><td><kbd>Super</kbd> + <kbd>F</kbd></td><td>Fullscreen</td></tr>
+          <tr><td><kbd>Super</kbd> + <kbd>T</kbd></td><td>Switch the window between floating and tiled</td></tr>
+          <tr><td><kbd>Super</kbd> + <kbd>C</kbd></td><td>Center the window</td></tr>
+          <tr><td><kbd>Super</kbd> + <kbd>L</kbd></td><td>Lock the screen</td></tr>
+          <tr><td><kbd>Super</kbd> + <kbd>Alt</kbd> + <kbd>Backspace</kbd></td><td>Shut down, restart or log out (asks first)</td></tr>
+          <tr><td><kbd>Alt</kbd> + <kbd>Tab</kbd></td><td>Next window</td></tr>
+          <tr><td><kbd>Super</kbd> + <kbd>1</kbd> to <kbd>9</kbd></td><td>Switch desktop</td></tr>
+          <tr><td><kbd>Print</kbd></td><td>Screenshot of the whole screen, saved to Pictures, Screenshots</td></tr>
+          <tr><td><kbd>Super</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd></td><td>Screenshot of an area</td></tr>
+          <tr><td><kbd>Super</kbd> + <kbd>N</kbd></td><td>Clear notifications</td></tr>
+          <tr><td><kbd>Super</kbd> + <kbd>/</kbd></td><td>Shortcut list in Glass Lens</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sounds" aria-labelledby="sounds-h">
+      <h2 id="sounds-h">Sound packs</h2>
+      <p>Every system sound (startup, log in, notifications, errors, plugging in a USB stick, volume changes) comes
+        from a sound pack. A sound pack is a folder of audio files named after events, such as
+        <code>boot.wav</code>, <code>notification.ogg</code> or <code>error.flac</code>. Open <b>Sound Packs</b>
+        from the app search to hear every sound, switch packs, or import a folder of your own. Any event your pack
+        leaves out falls back to the built-in sound.</p>
+    </section>
+
+    <section id="hardware" aria-labelledby="hw-h">
+      <h2 id="hw-h">Drivers and hardware</h2>
+      <p>GlassOS uses Debian 13's Linux kernel and drivers, so it supports the same hardware as Debian. There's
+        nothing to download for most computers.</p>
+      <ul class="list">
+        <li><b>Graphics:</b> Intel and AMD graphics work with the included open-source drivers. NVIDIA cards use the
+          basic open driver, which is slower; NVIDIA's own driver isn't included yet.</li>
+        <li><b>Wi-Fi and Bluetooth:</b> firmware for the common Intel, Realtek, Atheros and Broadcom chips is
+          included. If your Wi-Fi isn't found, connect a network cable and run
+          <code>sudo apt install firmware-misc-nonfree</code>.</li>
+        <li><b>Without graphics acceleration</b> (most virtual machines), GlassOS switches to lighter glass so
+          the desktop stays smooth. You can choose this yourself in Settings, Appearance, Effects.</li>
+        <li><b>Printers and scanners</b> aren't set up yet.</li>
+        <li>Glass Lens, Hardware shows your processor, memory, disks and graphics, and which driver the graphics use.</li>
+      </ul>
+    </section>
+
+    <section id="trouble" aria-labelledby="trouble-h">
+      <h2 id="trouble-h">When something goes wrong</h2>
+      <h3>An app won't open</h3>
+      <p>Open the Terminal and type the app's command (for example <code>glass-settings</code>). Any error is
+        printed there.</p>
+      <h3>An app stopped responding</h3>
+      <p>Open Glass Lens, find it under Apps &amp; Services, open it and click Quit this app. <kbd>Super</kbd> + <kbd>Q</kbd> also
+        closes the window in front.</p>
+      <h3>Everything feels slow</h3>
+      <p>Glass Lens shows which app is using the processor and memory. In a virtual machine, choose Lighter in
+        Settings, Appearance, Effects, and give the virtual machine more memory if you can.</p>
+      <h3>A window is off the screen</h3>
+      <p>Click it in the dock, then press <kbd>Super</kbd> + <kbd>C</kbd> to bring it back to the center.</p>
+      <h3>See the system's own messages</h3>
+      <p>Run <code>journalctl -b</code> in the Terminal for this startup's system log, or
+        <code>journalctl --user -t hyprland</code> for the desktop's.</p>
+    </section>
+  </main>
+
+  <footer>GlassOS is built from Debian's free and open-source software. This guide is a local file on your computer.</footer>
+</div>
+</body>
+</html>

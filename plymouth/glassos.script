@@ -1,0 +1,99 @@
+// GlassOS boot splash (Plymouth script theme)
+
+W = Window.GetWidth();
+H = Window.GetHeight();
+Window.SetBackgroundTopColor(0.05, 0.055, 0.09);
+Window.SetBackgroundBottomColor(0.05, 0.055, 0.09);
+
+// background, scaled to cover the screen
+bg_img = Image("background.png");
+sc = Math.Max(W / bg_img.GetWidth(), H / bg_img.GetHeight());
+bg = Sprite(bg_img.Scale(Math.Int(bg_img.GetWidth() * sc) + 1, Math.Int(bg_img.GetHeight() * sc) + 1));
+bg.SetX(Math.Int((W - bg_img.GetWidth() * sc) / 2));
+bg.SetY(Math.Int((H - bg_img.GetHeight() * sc) / 2));
+bg.SetZ(-100);
+
+logo_img = Image("logo.png");
+logo = Sprite(logo_img);
+logo.SetX(Math.Int(W / 2 - logo_img.GetWidth() / 2));
+logo.SetY(Math.Int(H * 0.42 - logo_img.GetHeight() / 2));
+logo.SetOpacity(0);
+
+word_img = Image("wordmark.png");
+word = Sprite(word_img);
+word.SetX(Math.Int(W / 2 - word_img.GetWidth() / 2));
+word.SetY(Math.Int(H * 0.42 + logo_img.GetHeight() / 2 + 18));
+word.SetOpacity(0);
+
+track_img = Image("track.png");
+fill_img = Image("fill.png");
+shimmer_img = Image("shimmer.png");
+TW = track_img.GetWidth();
+TH = track_img.GetHeight();
+TX = Math.Int(W / 2 - TW / 2);
+TY = Math.Int(H * 0.78);
+track = Sprite(track_img);
+track.SetPosition(TX, TY, 1);
+track.SetOpacity(0);
+fill = Sprite();
+fill.SetPosition(TX, TY, 2);
+shimmer = Sprite(shimmer_img);
+shimmer.SetPosition(TX, TY, 3);
+shimmer.SetOpacity(0);
+
+msg = Sprite();
+msg.SetPosition(0, Math.Int(H * 0.86), 5);
+
+global.t = 0;
+global.progress = 0;
+global.shown = 0;
+
+fun refresh_callback() {
+  global.t++;
+  a = Math.Min(1, global.t / 25);
+  logo.SetOpacity(a);
+  word.SetOpacity(a);
+  track.SetOpacity(a * 0.9);
+  // the fill eases towards the real progress so it never jumps
+  global.shown = global.shown + (global.progress - global.shown) * 0.08;
+  fw = Math.Int(TW * global.shown);
+  if (fw < TH) fw = TH;
+  fill.SetImage(fill_img.Scale(fw, TH));
+  fill.SetOpacity(a);
+  // a soft highlight gliding across the pill
+  sx = (global.t * 3) % (TW + 120) - 60;
+  shimmer.SetX(TX + sx);
+  if (sx < 0 || sx > TW - shimmer_img.GetWidth()) shimmer.SetOpacity(0);
+  else shimmer.SetOpacity(0.55 * a);
+}
+Plymouth.SetRefreshFunction(refresh_callback);
+
+fun progress_callback(duration, progress) {
+  global.progress = Math.Clamp(progress, 0, 1);
+}
+Plymouth.SetBootProgressFunction(progress_callback);
+
+fun message_callback(text) {
+  img = Image.Text(text, 1, 1, 1, 0.75, "Inter 12");
+  msg.SetImage(img);
+  msg.SetX(Math.Int(W / 2 - img.GetWidth() / 2));
+}
+Plymouth.SetMessageFunction(message_callback);
+
+// password prompt (only used if you encrypt your disk)
+fun display_password_callback(prompt, bullets) {
+  s = prompt + "   ";
+  for (i = 0; i < bullets; i++) s = s + "•";
+  message_callback(s);
+}
+Plymouth.SetDisplayPasswordFunction(display_password_callback);
+
+fun display_normal_callback() {
+  msg.SetImage(Image.Text("", 1, 1, 1, 0));
+}
+Plymouth.SetDisplayNormalFunction(display_normal_callback);
+
+fun quit_callback() {
+  global.progress = 1;
+}
+Plymouth.SetQuitFunction(quit_callback);

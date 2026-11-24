@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Sound Packs
+GenericName=System Sounds
+Comment=Choose, preview and import the sounds GlassOS makes
+Exec=glass-lens --page sounds
+Icon=glass-sounds
+Terminal=false
+Categories=Settings;AudioVideo;GTK;
+Keywords=sound;audio;boot;notification;synth;theme;pack;
+StartupWMClass=os.glass.Lens

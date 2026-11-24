@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Glass Lens
+GenericName=System Monitor
+Comment=See every app, service and connection, and what hardware each one uses
+Exec=glass-lens
+Icon=glass-lens
+Terminal=false
+Categories=System;Monitor;GTK;
+Keywords=task;manager;activity;monitor;process;cpu;memory;ram;network;privacy;hardware;
+StartupWMClass=os.glass.Lens

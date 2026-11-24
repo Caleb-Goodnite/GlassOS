@@ -1,0 +1,9 @@
+# Build output: ISOs, kernels, VM disks and logs (rebuilt with ./build.sh)
+out/
+*.iso
+*.qcow2
+
+# macOS and Python leftovers
+.DS_Store
+__pycache__/
+*.pyc

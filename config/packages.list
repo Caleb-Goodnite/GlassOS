@@ -1,0 +1,150 @@
+# GlassOS package manifest
+#
+# Every package that GlassOS deliberately installs is listed here, with the reason it exists.
+# (Their own dependencies are pulled in automatically; recommends are NOT installed.)
+# This exact file ships inside the OS at /usr/share/glassos/packages.list and is shown in
+# Glass Lens -> About, so you can always see what is on your machine and why.
+#
+# Format:  package  [tags]  # reason
+# Tags:    amd64 / arm64 = only on that CPU type,   bpo = from Debian's official backports
+
+## Core system
+systemd-sysv                # starts and supervises every service; keeps the logs
+systemd-timesyncd           # keeps your clock correct (asks a public time server; needed for HTTPS)
+libpam-systemd              # tracks login sessions so devices and audio belong to the logged-in user
+polkitd                     # decides which apps may shut down, mount drives, etc. (asks you when needed)
+dbus-user-session           # lets desktop apps talk to each other
+udev                        # detects hardware as it is plugged in
+sudo                        # lets your account do admin tasks when you ask
+locales                     # language and region formats
+bash-completion             # tab-completion in the terminal
+nano                        # simple terminal text editor
+less                        # scroll through long text in the terminal
+procps                      # ps, top, free: process and memory tools
+psmisc                      # killall, pstree
+iproute2                    # ip and ss: network tools (Glass Lens uses ss for connections)
+iputils-ping                # ping
+ca-certificates             # trusted certificates for secure (HTTPS) connections
+curl                        # download files from the terminal
+pciutils                    # lspci: name your PCI hardware (Glass Lens uses it)
+usbutils                    # lsusb: list USB devices
+lsof                        # see which program has which file open
+zstd                        # compression used by the boot image
+xz-utils                    # common archive format
+
+## Kernel, boot and installer
+linux-image-amd64 [amd64]   # the Linux kernel
+linux-image-arm64 [arm64]   # the Linux kernel
+initramfs-tools             # builds the early-boot image
+live-boot                   # lets the USB/ISO boot straight into a live desktop
+plymouth                    # graphical boot splash
+plymouth-label              # text rendering for the boot splash
+grub-common                 # GRUB bootloader tools (used by the installer)
+grub2-common                # update-grub
+grub-pc-bin [amd64]         # GRUB for older BIOS PCs
+grub-efi-amd64-bin [amd64]  # GRUB for UEFI PCs
+grub-efi-arm64-bin [arm64]  # GRUB for UEFI ARM machines
+efibootmgr                  # registers GlassOS with your UEFI firmware
+os-prober                   # finds Windows/other OSes so GRUB can offer them (dual boot)
+parted                      # partitions the disk during install
+dosfstools                  # formats the EFI partition
+e2fsprogs                   # formats and checks the main ext4 partition
+rsync                       # copies files during install
+squashfs-tools              # unpacks the live image onto your disk during install
+
+## Firmware (blobs your hardware needs to run; they only load if you have that device)
+firmware-linux-free         # free firmware for common devices
+firmware-iwlwifi            # Intel Wi-Fi and Bluetooth
+firmware-realtek            # Realtek Wi-Fi, Ethernet and Bluetooth
+firmware-atheros            # Qualcomm Atheros Wi-Fi
+firmware-brcm80211          # Broadcom Wi-Fi
+firmware-amd-graphics [amd64]    # AMD Radeon graphics
+firmware-intel-graphics [amd64]  # Intel graphics
+firmware-sof-signed [amd64]      # audio on modern Intel laptops
+intel-microcode [amd64]     # CPU security and stability fixes from Intel
+amd64-microcode [amd64]     # CPU security and stability fixes from AMD
+
+## Networking and privacy
+network-manager             # connects to Wi-Fi and Ethernet (connectivity "phone-home" checks are off)
+wpasupplicant               # Wi-Fi security (WPA2/WPA3)
+nftables                    # firewall: blocks incoming connections by default
+bluez                       # Bluetooth (off until you turn it on in Settings)
+
+## Audio
+pipewire                    # the sound server
+pipewire-pulse              # compatibility for apps that expect PulseAudio
+pipewire-alsa               # compatibility for apps that talk to ALSA directly
+wireplumber                 # picks and remembers your speakers/headphones
+rtkit                       # lets audio run glitch-free without running as admin
+alsa-utils                  # sound card drivers' tools; saves your volume between boots
+sox                         # plays the boot sound before the desktop starts
+libsox-fmt-alsa             # sox output to the sound card
+libsox-fmt-base             # sox: WAV, FLAC and Ogg support for boot sounds
+libsox-fmt-mp3              # sox: MP3 support for boot sounds
+pulsemixer                  # volume mixer (opened from the top bar)
+libspa-0.2-bluetooth        # Bluetooth headphones and speakers
+
+## Desktop (Wayland)
+hyprland [bpo]              # the compositor: draws windows, blur, animations
+hyprland-guiutils [bpo]     # small helper dialogs Hyprland uses (e.g. "app not responding")
+hyprlock [bpo]              # lock screen
+hypridle [bpo]              # locks and dims the screen when idle
+xwayland                    # runs older X11 apps
+libgl1-mesa-dri             # graphics drivers (Mesa)
+libegl1                     # OpenGL/EGL plumbing
+libgles2                    # OpenGL ES plumbing
+libgl1                      # OpenGL plumbing
+waybar                      # the top menu bar
+fuzzel                      # the search/app launcher
+mako-notifier               # notification bubbles
+swaybg                      # draws the wallpaper
+greetd                      # login manager
+cage                        # runs the glass login screen (a one-window compositor)
+tuigreet                    # text login screen, used if the glass one cannot start
+grim                        # screenshots
+slurp                       # select a screen area for screenshots
+wl-clipboard                # copy/paste from the terminal
+brightnessctl               # screen brightness keys
+playerctl                   # media keys (play/pause/next)
+libnotify-bin               # notify-send: lets scripts show notifications
+xdg-utils                   # "open this file with the right app"
+xdg-user-dirs               # creates Documents, Downloads, Pictures...
+shared-mime-info            # knows what kind of file is what
+gvfs                        # lets Files show USB drives and the trash
+udisks2                     # mounts USB drives when you click them
+mate-polkit                 # asks for your password when an app needs admin rights
+gir1.2-gtk4layershell-1.0   # lets the GlassOS dock sit on the desktop layer
+libgtk4-layer-shell0        # (the library behind it)
+libcanberra-gtk3-module     # apps play your sound pack for their own events
+
+## Look and feel
+fonts-inter                 # interface font
+fonts-jetbrains-mono        # terminal font
+fonts-noto-color-emoji      # emoji
+fonts-dejavu-core           # fallback font with wide character coverage
+fonts-font-awesome          # icons in the top bar
+papirus-icon-theme          # app icons
+bibata-cursor-theme         # mouse cursor
+adwaita-icon-theme          # fallback icons
+librsvg2-common             # draws SVG icons
+gsettings-desktop-schemas   # where GTK apps read theme and font settings
+dconf-gsettings-backend     # remembers app settings
+
+## Apps
+foot                        # terminal
+thunar                      # file manager ("Files")
+mousepad                    # text editor
+imv                         # image viewer
+firefox-esr                 # full web browser for sites that need it (telemetry, studies, Pocket and sponsored content off)
+gir1.2-webkit-6.0           # the web engine inside Glass Browser (WebKitGTK)
+flatpak                     # installs apps from the App Store (Flathub), each in its own sandbox
+gir1.2-flatpak-1.0          # lets the App Store drive Flatpak and show download progress
+xdg-desktop-portal          # lets sandboxed apps ask for a file, a link or the screen, through you
+xdg-desktop-portal-gtk      # the file picker and light/dark preference those apps see
+
+## GlassOS's own tools (Glass Lens, Settings, Calculator, Browser, dock, sound system)
+python3                     # runs the GlassOS apps, the dock and the sound daemon
+python3-gi                  # GTK bindings for Python
+gir1.2-gtk-4.0              # GTK 4 toolkit
+python3-gi-cairo            # drawing charts in Glass Lens
+python3-pyudev              # sound daemon: hears USB plug/unplug

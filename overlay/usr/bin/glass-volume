@@ -1,0 +1,9 @@
+#!/bin/sh
+# glass-volume up|down|mute   (volume keys; plays the "volume" sound as feedback)
+S=@DEFAULT_AUDIO_SINK@
+case "$1" in
+  up)   wpctl set-mute $S 0; wpctl set-volume -l 1.0 $S 5%+ ;;
+  down) wpctl set-volume $S 5%- ;;
+  mute) wpctl set-mute $S toggle ;;
+esac
+glass-sound volume

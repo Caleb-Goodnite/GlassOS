@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Settings
+Comment=Wi-Fi, Bluetooth, displays, sound, appearance and more
+Exec=glass-settings
+Icon=glass-settings
+Terminal=false
+Categories=Settings;System;GTK;
+Keywords=preferences;wifi;network;bluetooth;display;sound;wallpaper;keyboard;mouse;time;privacy;
+StartupWMClass=os.glass.Settings

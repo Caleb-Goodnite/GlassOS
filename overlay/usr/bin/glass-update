@@ -1,0 +1,19 @@
+#!/bin/bash
+# GlassOS software updates. Nothing updates behind your back; this is the only way it happens.
+echo
+echo "  GlassOS gets its software straight from Debian's servers."
+echo "  This checks for updates and shows you everything before anything is installed."
+echo
+sudo apt-get update || { read -rp "Could not reach the update servers. Press Enter to close."; exit 1; }
+echo
+mapfile -t up < <(apt list --upgradable 2>/dev/null | tail -n +2)
+if [ ${#up[@]} -eq 0 ]; then
+  read -rp "  Everything is up to date. Press Enter to close."
+  exit 0
+fi
+printf '  %s\n' "${up[@]}"
+echo
+read -rp "  Install these ${#up[@]} updates? [Y/n] " a
+case "$a" in [nN]*) exit 0 ;; esac
+sudo apt-get full-upgrade -y && glass-sound notification
+read -rp "  Done. Press Enter to close."

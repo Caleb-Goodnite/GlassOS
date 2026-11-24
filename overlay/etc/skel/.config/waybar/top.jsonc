@@ -1,0 +1,78 @@
+// GlassOS top bar. Click the logo for the GlassOS menu. The coloured icons on the right appear only
+// while something uses the camera (green), microphone (orange), screen (blue) or speakers (white).
+{
+  "name": "topbar",
+  "layer": "top",
+  "position": "top",
+  "height": 34,
+  "margin-top": 6,
+  "margin-left": 10,
+  "margin-right": 10,
+  "spacing": 4,
+  "modules-left": ["image#logo", "custom/app", "hyprland/workspaces"],
+  "modules-center": [],
+  "modules-right": ["custom/privacy", "tray", "network", "pulseaudio", "battery", "custom/clock"],
+
+  "image#logo": {
+    "path": "/usr/share/glassos/logo-symbolic.png",
+    "size": 16,
+    "on-click": "glass-menu",
+    "tooltip": false
+  },
+  // Name of the focused app, read from its launcher so App Store apps show "Firefox", not "org.mozilla.firefox"
+  "custom/app": {
+    "exec": "/usr/lib/glassos/app-name",
+    "return-type": "json",
+    "restart-interval": 5,
+    "escape": true,
+    "max-length": 32,
+    "tooltip": false
+  },
+  "hyprland/workspaces": {
+    "format": "{icon}",
+    "format-icons": { "active": "●", "default": "○", "empty": "○" },
+    "persistent-workspaces": { "*": 3 }
+  },
+  "custom/privacy": {
+    "exec": "/usr/lib/glassos/privacy-indicator",
+    "return-type": "json",
+    "restart-interval": 10,
+    "escape": false,
+    "on-click": "glass-launch glass-settings --page privacy"
+  },
+  "tray": { "icon-size": 16, "spacing": 8 },
+  "network": {
+    "format-wifi": "",
+    "format-ethernet": "",
+    "format-linked": "",
+    "format-disconnected": "",
+    "tooltip-format-wifi": "{essid} ({signalStrength}%)\n{ipaddr}",
+    "tooltip-format-ethernet": "Wired: {ifname}\n{ipaddr}",
+    "tooltip-format-disconnected": "Not connected",
+    "on-click": "glass-launch foot --title Network -e nmtui"
+  },
+  "pulseaudio": {
+    "format": "{icon}",
+    "format-muted": "",
+    "format-icons": { "default": ["", "", ""] },
+    "tooltip-format": "Volume {volume}%",
+    "scroll-step": 0,
+    "on-scroll-up": "glass-volume up",
+    "on-scroll-down": "glass-volume down",
+    "on-click": "glass-launch foot --title Sound -e pulsemixer",
+    "on-click-right": "glass-volume mute"
+  },
+  "battery": {
+    "states": { "warning": 20, "critical": 10 },
+    "format": "{icon}  {capacity}%",
+    "format-charging": "  {capacity}%",
+    "format-icons": ["", "", "", "", ""],
+    "tooltip-format": "{timeTo}\n{power:.1f} W"
+  },
+  "custom/clock": {
+    "exec": "date +'%a %b %-d   %-I:%M %p'",
+    "interval": 5,
+    "tooltip": false,
+    "on-click": "glass-launch glass-settings --page time"
+  }
+}

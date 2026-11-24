@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Software Updates
+Comment=Check for and install updates, only when you choose to
+Exec=foot --title "Software Updates" -e glass-update
+Icon=system-software-update
+Terminal=false
+Categories=System;Settings;
+Keywords=update;upgrade;apt;security;

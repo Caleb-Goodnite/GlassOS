@@ -1,0 +1,30 @@
+# The small Debian VM that builds GlassOS on a Mac (used by ./build.sh).
+# ./build.sh mounts this project folder at /work inside the VM.
+minimumLimaVersion: 2.0.0
+base:
+- template:_images/debian-13
+vmType: vz
+cpus: 6
+memory: 4GiB
+disk: 40GiB
+mounts: []
+vmOpts:
+  vz:
+    rosetta:
+      # runs x86-64 (amd64) programs on Apple Silicon, so the PC version can be built too
+      enabled: true
+      binfmt: true
+containerd:
+  system: false
+  user: false
+provision:
+- mode: system
+  script: |
+    #!/bin/bash
+    set -eux -o pipefail
+    command -v mmdebstrap >/dev/null && exit 0
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends mmdebstrap arch-test uidmap squashfs-tools xorriso mtools \
+      grub-common grub2-common dosfstools rsync python3-pil python3-numpy fonts-inter fonts-dejavu-core \
+      ca-certificates

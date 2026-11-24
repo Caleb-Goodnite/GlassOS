@@ -1,0 +1,11 @@
+// GlassOS: the person sitting at the computer, if they're an admin (group "sudo"), can manage
+// Wi-Fi/networks and set the time zone without typing their password. Everything else still asks.
+polkit.addRule(function (action, subject) {
+    if (!subject.local || !subject.active) return polkit.Result.NOT_HANDLED;
+    if (!subject.isInGroup("sudo") && !subject.isInGroup("netdev")) return polkit.Result.NOT_HANDLED;
+    if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0) return polkit.Result.YES;
+    if (subject.isInGroup("sudo") &&
+        (action.id === "org.freedesktop.timedate1.set-timezone" || action.id === "org.freedesktop.timedate1.set-ntp"))
+        return polkit.Result.YES;
+    return polkit.Result.NOT_HANDLED;
+});

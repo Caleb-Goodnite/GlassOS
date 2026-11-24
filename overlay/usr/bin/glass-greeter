@@ -1,0 +1,11 @@
+#!/bin/sh
+# GlassOS login screen. greetd runs this as the _greetd user.
+# The glass login screen runs inside "cage", a one-window Wayland compositor. If it can't
+# start (no GPU, a crash), the text login screen takes over so you can always log in.
+OK="${XDG_RUNTIME_DIR:-/tmp}/glass-greeter.ok"
+rm -f "$OK"
+if command -v cage >/dev/null 2>&1 && [ -z "${GLASS_TEXT_LOGIN:-}" ]; then
+  cage -s -d -- python3 /usr/lib/glassos/greeter/greeter.py
+  [ -e "$OK" ] && exit 0      # you logged in: greetd starts your desktop now
+fi
+exec tuigreet --time --remember --asterisks --greeting 'Welcome to GlassOS' --cmd glass-session

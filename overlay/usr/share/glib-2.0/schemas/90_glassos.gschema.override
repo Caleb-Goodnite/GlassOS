@@ -1,0 +1,26 @@
+[org.gnome.desktop.interface]
+# 'Adwaita' plus color-scheme below gives the dark theme. GTK 3 has no theme called
+# 'Adwaita-dark' unless gnome-themes-extra is installed, and falls back to light without it.
+gtk-theme='Adwaita'
+icon-theme='Papirus-Dark'
+cursor-theme='Bibata-Modern-Ice'
+cursor-size=24
+font-name='Inter 11'
+document-font-name='Inter 11'
+monospace-font-name='JetBrains Mono 11'
+color-scheme='prefer-dark'
+font-antialiasing='rgba'
+font-hinting='slight'
+
+[org.gnome.desktop.wm.preferences]
+button-layout='close,maximize:'
+
+[org.gnome.desktop.sound]
+theme-name='glassos'
+event-sounds=true
+input-feedback-sounds=false
+
+[org.gnome.desktop.privacy]
+remember-recent-files=true
+report-technical-problems=false
+send-software-usage-stats=false

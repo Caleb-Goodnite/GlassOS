@@ -1,0 +1,33 @@
+{
+  "policies": {
+    "DisableTelemetry": true,
+    "DisableFirefoxStudies": true,
+    "DisablePocket": true,
+    "DisableFeedbackCommands": true,
+    "DontCheckDefaultBrowser": true,
+    "OverrideFirstRunPage": "",
+    "OverridePostUpdatePage": "",
+    "EnableTrackingProtection": {
+      "Value": true, "Locked": false, "Cryptomining": true, "Fingerprinting": true,
+      "EmailTracking": true, "Category": "strict"
+    },
+    "FirefoxHome": {
+      "Search": true, "TopSites": true, "SponsoredTopSites": false, "Highlights": false,
+      "Pocket": false, "SponsoredPocket": false, "Snippets": false, "Locked": false
+    },
+    "FirefoxSuggest": { "WebSuggestions": false, "SponsoredSuggestions": false, "ImproveSuggest": false, "Locked": false },
+    "UserMessaging": {
+      "ExtensionRecommendations": false, "FeatureRecommendations": false, "UrlbarInterventions": false,
+      "SkipOnboarding": true, "MoreFromMozilla": false, "FirefoxLabs": false, "Locked": false
+    },
+    "Homepage": { "URL": "file:///usr/share/glassos/welcome/index.html", "StartPage": "homepage", "Locked": false },
+    "SearchEngines": { "Default": "DuckDuckGo" },
+    "Preferences": {
+      "datareporting.policy.dataSubmissionPolicyBypassNotification": { "Value": true, "Status": "default" },
+      "browser.newtabpage.activity-stream.showSponsored": { "Value": false, "Status": "default" },
+      "browser.newtabpage.activity-stream.showSponsoredTopSites": { "Value": false, "Status": "default" },
+      "browser.ml.chat.enabled": { "Value": false, "Status": "default" },
+      "network.trr.mode": { "Value": 0, "Status": "default" }
+    }
+  }
+}

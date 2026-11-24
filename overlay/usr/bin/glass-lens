@@ -1,0 +1,3 @@
+#!/bin/sh
+# Glass Lens: see where your computer's hardware is going.
+exec python3 /usr/lib/glassos/lens/lens.py "$@"

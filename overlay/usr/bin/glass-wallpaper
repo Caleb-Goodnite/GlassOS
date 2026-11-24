@@ -1,0 +1,25 @@
+#!/bin/sh
+# glass-wallpaper next | <image-file>   - change the desktop picture
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/glassos"
+mkdir -p "$CONF"
+cur="$(sed -n 's/^wallpaper *= *//p' "$CONF/desktop.conf" 2>/dev/null)"
+if [ "$1" = next ] || [ -z "$1" ]; then
+  set -- /usr/share/glassos/wallpapers/*.jpg "$HOME"/Pictures/Wallpapers/*.jpg "$HOME"/Pictures/Wallpapers/*.png
+  first=""; take=0; new=""
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    [ -z "$first" ] && first="$f"
+    if [ $take = 1 ]; then new="$f"; break; fi
+    [ "$f" = "$cur" ] && take=1
+  done
+  [ -n "$new" ] || new="$first"
+else
+  new="$(readlink -f "$1")"
+fi
+[ -f "$new" ] || { echo "no such image: $new" >&2; exit 1; }
+# replace only the wallpaper line; desktop.conf holds other settings too (effects=...)
+{ grep -v '^wallpaper *=' "$CONF/desktop.conf" 2>/dev/null; printf 'wallpaper = %s\n' "$new"; } > "$CONF/desktop.conf.tmp" \
+  && mv "$CONF/desktop.conf.tmp" "$CONF/desktop.conf"
+pkill -x swaybg
+systemd-run --user --scope --quiet --collect --slice=glass-desktop.slice \
+  --unit="glass-wallpaper-$$" -- swaybg -m fill -i "$new" >/dev/null 2>&1 &

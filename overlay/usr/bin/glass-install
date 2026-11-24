@@ -1,0 +1,239 @@
+#!/bin/bash
+# glass-install: put GlassOS on this computer's disk.
+#
+# It asks which disk to use, shows exactly what it will do, and changes nothing
+# until you type ERASE. The whole disk you choose is used for GlassOS (no dual-boot
+# partitioning yet; GRUB will still list other disks' systems it finds).
+set -euo pipefail
+[ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
+
+SQUASH=/run/live/medium/live/filesystem.squashfs
+T=/mnt/glassos-target
+ARCH="$(dpkg --print-architecture)"
+B=$'\e[1m'; D=$'\e[2m'; R=$'\e[0m'; C=$'\e[1;36m'; RED=$'\e[1;31m'; G=$'\e[1;32m'
+
+say()  { printf '%s\n' "$*"; }
+step() { printf '\n%s==>%s %s%s%s\n' "$C" "$R" "$B" "$*" "$R"; }
+die()  { printf '\n%sCannot continue:%s %s\n' "$RED" "$R" "$*" >&2; read -r -p "Press Enter to close." _ || true; exit 1; }
+ask()  { local __v; read -r -p "$1" __v; printf '%s' "$__v"; }
+
+cleanup() {
+  set +e
+  for m in sys/firmware/efi/efivars sys proc dev/pts dev run boot/efi ""; do
+    mountpoint -q "$T/$m" 2>/dev/null && umount -R "$T/$m" 2>/dev/null
+  done
+}
+trap cleanup EXIT
+
+clear
+cat <<EOF
+${B}Install GlassOS${R}
+
+This copies the system you're using right now onto a disk inside this computer.
+It takes about 5-10 minutes. You can stop at any point before you type ERASE.
+
+EOF
+[ -f "$SQUASH" ] || die "this only works from the GlassOS live USB/DVD (couldn't find $SQUASH)."
+if [ -d /sys/firmware/efi ]; then FIRMWARE=UEFI; else FIRMWARE=BIOS; fi
+[ "$ARCH" = arm64 ] && [ "$FIRMWARE" = BIOS ] && die "ARM computers need UEFI firmware to boot GlassOS."
+say "This computer starts in ${B}$FIRMWARE${R} mode."
+if [ "$FIRMWARE" = UEFI ] && [ "$(od -An -t u1 -j4 -N1 /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null | tr -d ' ')" = 1 ]; then
+  say "${RED}Secure Boot is on.${R} GlassOS 0.1 isn't signed for Secure Boot yet, so after installing,"
+  say "turn Secure Boot off in your firmware settings or the computer won't start GlassOS."
+fi
+
+# ----------------------------------------------------------------------------- disk
+step "Choose the disk"
+live_src="$(findmnt -no SOURCE /run/live/medium 2>/dev/null || true)"
+live_disk=""
+[ -n "$live_src" ] && live_disk="$(lsblk -no PKNAME "$live_src" 2>/dev/null | head -n1 || true)"
+mapfile -t DISKS < <(lsblk -dpno NAME,TYPE,RO | awk '$2=="disk" && $3=="0" {print $1}' | grep -v -E '/dev/(loop|sr|zram|ram)')
+CHOICES=()
+for d in "${DISKS[@]}"; do
+  [ "$(basename "$d")" = "$live_disk" ] && continue
+  CHOICES+=("$d")
+done
+[ ${#CHOICES[@]} -gt 0 ] || die "no disk found to install on (the USB stick you started from can't be used)."
+i=1
+for d in "${CHOICES[@]}"; do
+  size="$(lsblk -dno SIZE "$d" | xargs)"
+  model="$(lsblk -dno MODEL "$d" | xargs)"
+  tran="$(lsblk -dno TRAN "$d" | xargs)"
+  parts="$(lsblk -no NAME,FSTYPE,LABEL,SIZE "$d" | tail -n +2 | sed 's/^[^a-zA-Z0-9]*/      /')"
+  printf '  %s%d)%s %s  %s%s  %s%s\n' "$B" "$i" "$R" "$d" "$size" "${model:+  $model}" "$D${tran:+($tran)}" "$R"
+  [ -n "$parts" ] && printf '%s%s%s\n' "$D" "$parts" "$R"
+  i=$((i + 1))
+done
+n="$(ask "Disk number: ")"
+[[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -ge 1 ] && [ "$n" -le ${#CHOICES[@]} ] || die "that isn't one of the numbers above."
+DISK="${CHOICES[$((n - 1))]}"
+size_b="$(lsblk -bdno SIZE "$DISK")"
+[ "$size_b" -ge $((12 * 1024 * 1024 * 1024)) ] || die "$DISK is too small (GlassOS needs at least 12 GB)."
+part() { if [[ "$DISK" =~ [0-9]$ ]]; then echo "${DISK}p$1"; else echo "${DISK}$1"; fi; }
+
+# ----------------------------------------------------------------------------- you
+step "Your account"
+FULLNAME="$(ask "Your name (shown on the login screen): ")"
+while :; do
+  USERNAME="$(ask "Username (lowercase, no spaces) [$(echo "${FULLNAME%% *}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')]: ")"
+  [ -n "$USERNAME" ] || USERNAME="$(echo "${FULLNAME%% *}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')"
+  if [[ "$USERNAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && [ "$USERNAME" != root ] && [ "$USERNAME" != glass ]; then break; fi
+  say "  Use lowercase letters, digits, - or _, starting with a letter (not 'root' or 'glass')."
+done
+while :; do
+  read -r -s -p "Password: " PASS1; echo
+  read -r -s -p "Password again: " PASS2; echo
+  [ "$PASS1" = "$PASS2" ] || { say "  They didn't match, try again."; continue; }
+  [ ${#PASS1} -ge 4 ] || { say "  Use at least 4 characters."; continue; }
+  break
+done
+HOSTNAME_NEW="$(ask "Computer name [glassos]: ")"
+HOSTNAME_NEW="${HOSTNAME_NEW:-glassos}"
+[[ "$HOSTNAME_NEW" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$ ]] || die "computer names can only use letters, digits and -."
+guess_tz="$(timedatectl show -p Timezone --value 2>/dev/null || echo Etc/UTC)"
+TZ_NEW="$(ask "Time zone, e.g. America/Chicago or Europe/London [$guess_tz]: ")"
+TZ_NEW="${TZ_NEW:-$guess_tz}"
+[ -f "/usr/share/zoneinfo/$TZ_NEW" ] || { say "  Unknown time zone, using UTC (change later: sudo timedatectl set-timezone ...)"; TZ_NEW=Etc/UTC; }
+AUTOLOGIN="$(ask "Log in automatically without a password at startup? [y/N]: ")"
+case "$AUTOLOGIN" in y|Y|yes|Yes) AUTOLOGIN=1 ;; *) AUTOLOGIN=0 ;; esac
+
+# ----------------------------------------------------------------------------- confirm
+step "Here's exactly what will happen"
+disk_desc="$(echo "$(lsblk -dno SIZE "$DISK") $(lsblk -dno MODEL "$DISK")" | xargs)"
+bios_line=""
+[ "$ARCH" = amd64 ] && bios_line="       - 1 MB    BIOS boot (lets older PCs start GlassOS)
+"
+cat <<EOF
+  1. ${RED}Everything on $DISK ($disk_desc) is erased.${R}
+  2. It gets a new GPT partition table:
+${bios_line}       - 512 MB  EFI system partition (FAT32): the boot loader
+       - the rest: GlassOS (ext4), with a 2 GB swap file
+  3. GlassOS is copied onto it, user "$USERNAME" is created, the live "glass" account is removed.
+  4. GRUB is installed as the boot loader ($( [ "$ARCH" = amd64 ] && echo "UEFI and BIOS" || echo "UEFI" )).
+EOF
+echo
+c="$(ask "Type ERASE (in capitals) to install, anything else to cancel: ")"
+[ "$c" = ERASE ] || { say "Cancelled. Nothing was changed."; read -r -p "Press Enter to close." _ || true; exit 0; }
+
+# ----------------------------------------------------------------------------- go
+step "Preparing $DISK"
+swapoff -a 2>/dev/null || true
+for p in $(lsblk -lnpo NAME "$DISK" | tail -n +2); do umount -f "$p" 2>/dev/null || true; done
+wipefs -af "$DISK" >/dev/null
+parted -s "$DISK" mklabel gpt
+if [ "$ARCH" = amd64 ]; then
+  parted -s "$DISK" mkpart biosboot 1MiB 2MiB set 1 bios_grub on
+  parted -s "$DISK" mkpart EFI fat32 2MiB 514MiB set 2 esp on
+  parted -s "$DISK" mkpart GlassOS ext4 514MiB 100%
+  ESP="$(part 2)"; ROOTP="$(part 3)"
+else
+  parted -s "$DISK" mkpart EFI fat32 1MiB 513MiB set 1 esp on
+  parted -s "$DISK" mkpart GlassOS ext4 513MiB 100%
+  ESP="$(part 1)"; ROOTP="$(part 2)"
+fi
+partprobe "$DISK" 2>/dev/null || true
+udevadm settle
+for _ in $(seq 20); do [ -b "$ROOTP" ] && break; sleep 0.5; done
+mkfs.vfat -F 32 -n EFI "$ESP" >/dev/null
+mkfs.ext4 -F -q -L GlassOS "$ROOTP"
+
+step "Copying GlassOS onto the disk"
+mkdir -p "$T"
+mount "$ROOTP" "$T"
+unsquashfs -f -d "$T" "$SQUASH"
+mkdir -p "$T/boot/efi"
+mount "$ESP" "$T/boot/efi"
+
+step "Setting up your system"
+ROOT_UUID="$(blkid -s UUID -o value "$ROOTP")"
+ESP_UUID="$(blkid -s UUID -o value "$ESP")"
+fallocate -l 2G "$T/swapfile" && chmod 600 "$T/swapfile" && mkswap -q "$T/swapfile"
+cat > "$T/etc/fstab" <<EOF
+# <what>                                <where>     <type> <options>          <dump> <check>
+UUID=$ROOT_UUID  /          ext4   errors=remount-ro  0      1
+UUID=$ESP_UUID                          /boot/efi  vfat   umask=0077         0      1
+/swapfile                                none       swap   sw                 0      0
+EOF
+echo "$HOSTNAME_NEW" > "$T/etc/hostname"
+sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t$HOSTNAME_NEW/" "$T/etc/hosts"
+ln -sf "/usr/share/zoneinfo/$TZ_NEW" "$T/etc/localtime"
+echo "$TZ_NEW" > "$T/etc/timezone"
+
+for m in dev proc sys run; do mkdir -p "$T/$m"; done
+mount --rbind /dev "$T/dev"; mount --make-rslave "$T/dev"
+mount -t proc proc "$T/proc"
+mount --rbind /sys "$T/sys"; mount --make-rslave "$T/sys"
+mount -t tmpfs tmpfs "$T/run"
+cp -L /etc/resolv.conf "$T/etc/resolv.conf" 2>/dev/null || true
+inc() { chroot "$T" /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root LANG=C.UTF-8 \
+          DEBIAN_FRONTEND=noninteractive "$@"; }
+
+# your account replaces the live one
+inc userdel -r glass >/dev/null 2>&1 || true
+groups=""
+for g in sudo audio video render input netdev plugdev users; do
+  inc getent group "$g" >/dev/null && groups="${groups:+$groups,}$g"
+done
+inc useradd -m -s /bin/bash -c "$FULLNAME" -G "$groups" "$USERNAME"
+printf '%s:%s\n' "$USERNAME" "$PASS1" | inc chpasswd
+unset PASS1 PASS2
+for d in Desktop Documents Downloads Music Pictures Videos "Music/Sound Packs" Pictures/Screenshots; do
+  inc install -d -o "$USERNAME" -g "$USERNAME" "/home/$USERNAME/$d"
+done
+rm -f "$T/etc/sudoers.d/glassos-live" "$T/usr/share/applications/glass-install.desktop"
+
+# login screen
+{
+  echo "# GlassOS login manager (written by the installer)"
+  echo "[terminal]"
+  echo "vt = 7"
+  echo
+  echo "[default_session]"
+  echo 'command = "glass-greeter"'
+  echo "user = \"_greetd\""
+  if [ "$AUTOLOGIN" = 1 ]; then
+    echo
+    echo "# automatic login (you chose this during install; delete these 3 lines to turn it off)"
+    echo "[initial_session]"
+    echo "command = \"glass-session\""
+    echo "user = \"$USERNAME\""
+  fi
+} > "$T/etc/greetd/config.toml"
+
+step "Removing the live-USB parts"
+inc apt-get purge -y -q live-boot live-boot-initramfs-tools >/dev/null 2>&1 || true
+inc update-initramfs -u -k all
+
+step "Installing the GRUB boot loader"
+install -d "$T/boot/grub/themes"
+rm -rf "$T/boot/grub/themes/glassos"
+cp -r "$T/usr/share/glassos/grub-theme" "$T/boot/grub/themes/glassos"
+if mountpoint -q /sys/firmware/efi/efivars 2>/dev/null; then :; elif [ -d /sys/firmware/efi/efivars ]; then
+  mount -t efivarfs efivarfs "$T/sys/firmware/efi/efivars" 2>/dev/null || true
+fi
+efi_target=x86_64-efi; [ "$ARCH" = arm64 ] && efi_target=arm64-efi
+if [ "$FIRMWARE" = UEFI ]; then
+  inc grub-install --target="$efi_target" --efi-directory=/boot/efi --bootloader-id=GlassOS --recheck \
+    || inc grub-install --target="$efi_target" --efi-directory=/boot/efi --bootloader-id=GlassOS --no-nvram
+fi
+# also the fallback path (EFI/BOOT/BOOT*.EFI) for firmware that forgets boot entries, or if
+# this disk is later moved to another computer
+inc grub-install --target="$efi_target" --efi-directory=/boot/efi --removable --no-nvram
+[ "$ARCH" = amd64 ] && inc grub-install --target=i386-pc "$DISK"
+inc update-grub
+
+rm -f "$T/etc/resolv.conf"
+sync
+cleanup
+trap - EXIT
+
+cat <<EOF
+
+${G}GlassOS is installed.${R}
+
+  Remove the USB stick or DVD, then restart.
+  Log in as ${B}$USERNAME${R}. Admin tasks (installing software, updates) ask for your password.
+
+EOF
+r="$(ask "Restart now? [Y/n]: ")"
+case "$r" in n|N|no) exit 0 ;; *) systemctl reboot ;; esac

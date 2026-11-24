@@ -1,0 +1,13 @@
+# GlassOS login manager.
+# [initial_session] logs the live user in automatically once per boot. The installer
+# keeps it only if you choose automatic login.
+[terminal]
+vt = 7
+
+[default_session]
+command = "glass-greeter"
+user = "_greetd"
+
+[initial_session]
+command = "glass-session"
+user = "glass"

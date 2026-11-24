@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GlassOS start page</title>
+<!-- A local file (/usr/share/glassos/welcome/index.html). It loads no web resources. -->
+<style>
+  :root { color-scheme: dark; --edge: rgba(255,255,255,.16); --accent: #6aa8ff; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font-family: Inter, "DejaVu Sans", sans-serif; color: #f2f3f8;
+    background: #0d0e16 url("../wallpapers/prism.jpg") center / cover fixed;
+    display: flex; flex-direction: column; align-items: center; padding: 9vh 24px 40px;
+  }
+  header { display: flex; align-items: center; gap: 18px; margin-bottom: 30px; }
+  header img { width: 64px; height: 64px; }
+  h1 { font-size: 40px; font-weight: 800; margin: 0; letter-spacing: -.02em; }
+  main { width: min(680px, 100%); }
+  form.search {
+    display: flex; gap: 10px; padding: 8px 8px 8px 22px; border-radius: 999px;
+    background: rgba(20,21,32,.55); border: 1px solid var(--edge); border-top-color: rgba(255,255,255,.3);
+  }
+  form.search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(106,168,255,.35); }
+  form.search input {
+    flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: #fff; font: inherit; font-size: 18px;
+  }
+  form.search button {
+    border: 0; border-radius: 999px; padding: 10px 20px; min-height: 44px; font: inherit; font-weight: 700;
+    color: #fff; background: #3d6fd1; cursor: pointer;
+  }
+  form.search button:hover { background: #4a7fe6; }
+  form.search button:active { background: #3361bd; }
+  form.search button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  label.for-search { display: block; font-size: 14px; color: rgba(255,255,255,.82); margin: 0 0 8px 22px; }
+  .keys { margin-top: 38px; padding: 6px 22px 10px; border-radius: 18px;
+          background: rgba(20,21,32,.5); border: 1px solid var(--edge); }
+  h2 { font-size: 15px; margin: 16px 0 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  td { padding: 5px 0; color: rgba(255,255,255,.86); vertical-align: top; }
+  td:first-child { white-space: nowrap; padding-right: 16px; width: 1%; }
+  kbd {
+    font-family: inherit; font-size: 13px; padding: 1px 7px; border-radius: 6px;
+    background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.22); color: #fff;
+  }
+  /* In Glass Browser the page background is left clear so the desktop shows through the window */
+  html.glass body { background: transparent; }
+  footer { margin-top: 32px; font-size: 13px; color: rgba(255,255,255,.72); text-align: center; line-height: 1.7; }
+  footer a { color: #9cc4ff; cursor: pointer; }
+  footer a:hover { color: #fff; }
+  footer a:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  @media (max-width: 520px) {
+    h1 { font-size: 30px; }
+    td:first-child { white-space: normal; }
+  }
+</style>
+</head>
+<body>
+  <script>if (location.hash === "#glass") document.documentElement.classList.add("glass");</script>
+  <header>
+    <img src="../logo.png" alt="" width="64" height="64">
+    <h1>GlassOS</h1>
+  </header>
+
+  <main>
+    <form class="search" action="https://duckduckgo.com/" method="get" role="search">
+      <input id="q" name="q" aria-label="Search DuckDuckGo" autofocus autocomplete="off">
+      <button type="submit">Search</button>
+    </form>
+    <label class="for-search" for="q" style="margin-top:8px">Searches go to DuckDuckGo. You can change this in the browser's settings.</label>
+
+    <section class="keys" aria-labelledby="keys-title">
+      <h2 id="keys-title">Keyboard shortcuts</h2>
+      <table>
+        <tr><td><kbd>Super</kbd> + <kbd>Space</kbd></td><td>Search for an app and open it</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>U</kbd></td><td>Glass Lens: what's running and what it uses</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>I</kbd></td><td>Settings</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>Q</kbd></td><td>Close the window</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>L</kbd></td><td>Lock the screen</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>Alt</kbd> + <kbd>Backspace</kbd></td><td>Shut down, restart or log out (asks first)</td></tr>
+        <tr><td><kbd>Super</kbd> + <kbd>/</kbd></td><td>Every shortcut</td></tr>
+      </table>
+      <h2>System sounds</h2>
+      <p style="margin:0 0 10px;color:rgba(255,255,255,.86);font-size:15px;line-height:1.5">
+        Sounds come from a sound pack, which is a folder of audio files named after events
+        (<code>boot.wav</code>, <code>notification.wav</code>, <code>error.wav</code>). Open
+        <b>Sound Packs</b> from the app search to hear them or add your own.</p>
+    </section>
+  </main>
+
+  <footer><a href="../help/index.html">GlassOS Help</a>: getting apps, privacy, shortcuts and drivers.<br>
+    GlassOS is built from Debian's free and open-source software.</footer>
+</body>
+</html>

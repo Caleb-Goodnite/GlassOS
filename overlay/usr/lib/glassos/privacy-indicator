@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""Top bar privacy indicator: shows what is using the camera, microphone, speakers or screen
+right now, and which app. Prints one JSON line for Waybar each time that changes.
+
+Colours follow a simple rule: green = camera, orange = microphone, blue = screen sharing,
+white = sound playing. Click it to open Settings > Privacy & Security, where each one can be
+stopped or switched off.
+
+Reads only this computer: PipeWire's list of audio/video streams (pw-dump) and which programs
+have a camera device (/dev/video*) open.
+"""
+import json
+import os
+import subprocess
+import sys
+import time
+
+POLL = 2.0
+# GlassOS's own short system sounds aren't "an app playing sound"
+OWN_SOUNDS = {"pw-play", "paplay", "aplay", "play", "glass-sound", "glass-soundd"}
+NOT_APPS = {"pipewire", "wireplumber", "pipewire-pulse", "xdg-desktop-portal", "xdg-desktop-portal-hyprland"}
+
+
+def pretty(name):
+    return {"firefox-esr": "Firefox", "firefox": "Firefox", "glass-browser": "Glass Browser",
+            "WebKitWebProcess": "Glass Browser"}.get(name, name)
+
+
+def camera_apps():
+    apps = set()
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            fds = os.listdir(f"/proc/{pid}/fd")
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                if os.readlink(f"/proc/{pid}/fd/{fd}").startswith("/dev/video"):
+                    comm = open(f"/proc/{pid}/comm").read().strip()
+                    if comm not in NOT_APPS:
+                        apps.add(pretty(comm))
+                    break
+            except OSError:
+                continue
+    return apps
+
+
+def mic_switched_off():
+    conf = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "glassos", "privacy.conf")
+    try:
+        return "mic=off" in open(conf).read().split()
+    except OSError:
+        return False
+
+
+def streams():
+    """{"mic": {...}, "out": {...}, "screen": {...}, "camera": {...}} app names from PipeWire"""
+    found = {"mic": set(), "out": set(), "screen": set(), "camera": set()}
+    try:
+        out = subprocess.run(["pw-dump"], capture_output=True, text=True, timeout=5).stdout
+        objs = json.loads(out or "[]")
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return found
+    mic_off = mic_switched_off()
+    # a stream node only names its app; the program's file name sits on the client that owns it
+    clients = {o.get("id"): (o.get("info") or {}).get("props") or {}
+               for o in objs if o.get("type") == "PipeWire:Interface:Client"}
+    for o in objs:
+        info = o.get("info") or {}
+        props = info.get("props") or {}
+        if o.get("type") != "PipeWire:Interface:Node":
+            continue
+        props = {**clients.get(props.get("client.id"), {}), **props}
+        if mic_off and props.get("media.class") == "Audio/Source":
+            # microphone switched off in Settings: keep every microphone muted, new ones too
+            muted = any(p.get("mute") for p in (info.get("params") or {}).get("Props", []) if isinstance(p, dict))
+            if not muted:
+                subprocess.run(["wpctl", "set-mute", str(o.get("id")), "1"], timeout=5)
+        if info.get("state") != "running":
+            continue
+        cls = props.get("media.class", "")
+        app = props.get("application.name") or props.get("application.process.binary") or ""
+        binary = props.get("application.process.binary", "")
+        name = pretty(app or binary or "An app")
+        if cls == "Stream/Input/Audio":
+            found["mic"].add(name)
+        elif cls == "Stream/Output/Audio":
+            if binary not in OWN_SOUNDS and app not in OWN_SOUNDS:
+                found["out"].add(name)
+        elif cls == "Video/Source" and "xdph" in props.get("node.name", ""):
+            found["screen"].add("Screen sharing")
+        elif cls == "Stream/Input/Video":
+            found["camera"].add(name)
+    return found
+
+
+ICONS = {"camera": ("", "Camera"), "mic": ("", "Microphone"),
+         "screen": ("", "Screen"), "out": ("", "Sound")}
+
+
+def render(state):
+    tips, classes = [], []
+    for key in ("camera", "mic", "screen", "out"):
+        apps = sorted(state[key])
+        if not apps:
+            continue
+        classes.append(key)
+        tips.append(f"{ICONS[key][1]}: {', '.join(apps)}")
+    if not classes:
+        return {"text": "", "tooltip": "", "class": "idle"}
+    tips.append("Click to stop or switch off")
+    # Waybar can't colour single spans by class, so colours go inline
+    colour = {"camera": "#5fe3a1", "mic": "#ffb15c", "screen": "#7fb6ff", "out": "#e8e9f0"}
+    text = "  ".join(f"<span color='{colour[k]}'>{ICONS[k][0]}</span>" for k in classes)
+    return {"text": text, "tooltip": "\n".join(tips), "class": classes}
+
+
+def main():
+    last = None
+    while True:
+        s = streams()
+        s["camera"] |= camera_apps()
+        msg = json.dumps(render(s))
+        if msg != last:
+            print(msg, flush=True)
+            last = msg
+        time.sleep(POLL)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (KeyboardInterrupt, BrokenPipeError):
+        sys.exit(0)

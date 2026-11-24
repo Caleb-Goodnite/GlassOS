@@ -1,0 +1,26 @@
+#!/bin/sh
+# Plays the boot sound. Runs once per boot, before the login screen, straight to the
+# sound card (the desktop sound server isn't running yet).
+# Turn it off with:  sudo touch /etc/glassos/no-boot-sound
+
+f="$(ls /var/lib/glassos/sounds/boot.* 2>/dev/null | head -n1)"
+if [ -z "$f" ]; then
+  pack="$(sed -n 's/^DEFAULT_SOUNDPACK=//p' /usr/share/glassos/build-info 2>/dev/null)"
+  f="$(ls /usr/share/glassos/soundpacks/${pack:-glassos-default}/boot.* 2>/dev/null | head -n1)"
+fi
+[ -n "$f" ] || exit 0
+
+vol="$(sed -n 's/^ *volume *= *//p' /etc/glassos/sounds.conf 2>/dev/null | head -n1)"
+[ -n "$vol" ] || vol=0.8
+
+# wait (max 4s) for a sound card to show up
+i=0
+while ! grep -q '^ *[0-9]' /proc/asound/cards 2>/dev/null; do
+  i=$((i + 1)); [ $i -gt 40 ] && exit 0; sleep 0.1
+done
+sleep 0.3
+
+echo "GlassOS: playing boot sound $f"
+AUDIODRIVER=alsa timeout 10 play -q -v "$vol" "$f" 2>/dev/null || \
+  { case "$f" in *.wav) timeout 10 aplay -q "$f" ;; esac; }
+exit 0
