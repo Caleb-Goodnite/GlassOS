@@ -51,7 +51,12 @@ Visual language: layered frosted glass over a colourful wallpaper. Dials: **ENER
 | App names in the top bar come from each app's launcher | App Store apps read "Tux Paint", not "org.tuxpaint.Tuxpaint". |
 | Windows can't leave the screen | Owner asked. A window whose title bar is under the top bar can't be grabbed, so letting go of a window slides it back inside the screen, below the top bar. |
 | Maximize hides the top bar and dock | Owner asked for the Mac's full screen: the window gets every pixel, and keeps its title bar so the same button shrinks it back. |
-| Dock size Small / Medium / Large, Medium by default (36 px icons) | Owner found the 46 px dock too big. |
+| Dock size is a slider (24 to 72 px), 36 px by default | Owner found the 46 px dock too big, and owners want to set the size exactly. The old Small / Medium / Large choice still reads. |
+| Dock magnification, like a Mac: icons near the pointer grow (up to 2x, never past 128 px), neighbours move aside and the bar widens | Owners asked for it. A cosine falloff about two and a half icons wide keeps the growth smooth; the spot under the pointer stays still so the icon you're aiming at doesn't slide away. |
+| The dock hides while a window is full size, and comes up when the pointer touches the bottom edge | Owners asked for a way to switch apps from a full-size window. "Hide the dock automatically" does the same at all times. A hidden dock is unmapped, so it takes no clicks. |
+| App icons are our own "Glass" theme, in three styles: Dark (the default), Color, Clear (Settings > Appearance > Icon style) | Both owners liked Dark best. Like iPhone's icon appearance. Owners found Papirus looked like stock Linux and wanted icons with real glass. `scripts/make-icons.py` draws them all from one recipe. |
+| Icon recipe: squircle tile, light from above (bright top edge, fainter bottom edge where light leaves the glass), symbols made of tinted see-through glass with a shadow in the tile's colour | One recipe makes the set read as a family. Glass reads as glass through its edges and what shows through it, not through gloss. |
+| One plain metaphor per icon, readable at 32 px | Files is a folder, Browser a glass globe (owners read a compass as Safari), App Store a shopfront (owners read a shopping bag as Samsung's store), Settings a toothed ring around a hub like a watch movement (owners found a single fat gear toyish). |
 | Squircle window corners (radius 20, rounding power 4) | The curve eases in instead of starting abruptly like a circle's, which reads as more finished. GTK can only draw circular corners, so cards and buttons inside apps stay circular. |
 | Glass Lens refreshes every two-thirds of a second | Owner's pick: 1 s felt slow, half a second too busy. Sensors that wake hardware or start programs refresh every 8 to 10 seconds. |
 
@@ -64,8 +69,8 @@ Visual language: layered frosted glass over a colourful wallpaper. Dials: **ENER
 
 ## Placeholders still to confirm
 
-- **Logo and app icons.** These were drawn from code without a brief from the owner. Treat them as
-  placeholders until the owner approves or supplies a mark (`scripts/make-assets.py`). The Settings
-  gear replaced a stock icon the owner read as a chess pawn; the App Store icon is an arrow into a tray.
+- **Logo.** Drawn from code without a brief from the owner (`scripts/make-assets.py`). Treat it as a
+  placeholder until the owner approves or supplies a mark. App icons are now the Glass theme
+  (`scripts/make-icons.py`), reviewed by both owners.
 - **Default sounds.** These are synthesized stand-ins. The owner's own synth pack replaces them
   (see `soundpacks/README.md`).

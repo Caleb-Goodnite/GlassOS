@@ -44,6 +44,9 @@ CSS = """
 flowboxchild { padding: 0; background: none; }
 .swatch { min-width: 26px; min-height: 26px; border-radius: 99px; padding: 0; border: 2px solid alpha(#ffffff, 0.25); }
 .swatch.current { border-color: #ffffff; }
+.icon-style { background: none; border: 2px solid transparent; border-radius: 18px; padding: 8px 10px 6px 10px; }
+.icon-style:hover { background: alpha(#ffffff, 0.06); }
+.icon-style.current { border-color: alpha(#ffffff, 0.85); background: alpha(#ffffff, 0.08); }
 .bars { font-family: "JetBrains Mono", monospace; letter-spacing: -1px; }
 .clock-big { font-size: 34px; font-weight: 700; font-feature-settings: "tnum"; }
 """
@@ -169,6 +172,37 @@ class Page(Gtk.ScrolledWindow):
 
     def refresh(self):
         pass
+
+
+def set_icon_theme(theme):
+    """Use an icon theme everywhere: GTK 3 and 4 apps, the launcher and notifications."""
+    def set_key(path, key, value, section=None):
+        try:
+            with open(path) as f:
+                text = f.read()
+        except OSError:
+            text = f"[{section}]\n" if section else ""
+        if re.search(rf"^{re.escape(key)}=.*$", text, re.M):
+            text = re.sub(rf"^{re.escape(key)}=.*$", f"{key}={value}", text, flags=re.M)
+        else:
+            text = text.rstrip("\n") + f"\n{key}={value}\n"
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(text)
+
+    for v in ("gtk-3.0", "gtk-4.0"):
+        set_key(os.path.join(CFG, v, "settings.ini"), "gtk-icon-theme-name", theme, "Settings")
+    set_key(os.path.join(CFG, "fuzzel", "fuzzel.ini"), "icon-theme", theme, "main")
+    mako = os.path.join(CFG, "mako", "config")
+    if os.path.exists(mako):
+        set_key(mako, "icon-path", f"/usr/share/icons/{theme}:/usr/share/icons/Papirus-Dark")
+        spawn(["makoctl", "reload"])
+    # running apps follow this setting (the gsettings tool isn't installed, so set it directly)
+    src = Gio.SettingsSchemaSource.get_default()
+    if src and src.lookup("org.gnome.desktop.interface", True):
+        s = Gio.Settings.new("org.gnome.desktop.interface")
+        s.set_string("icon-theme", theme)
+        Gio.Settings.sync()
 
 
 def switch(active, cb):
@@ -638,16 +672,93 @@ class AppearancePage(Page):
         fx_row = ui.setting_row("Effects", None, self.fx)
         fx_row.get_first_child().append(self.fx_sub)
         gc.append(fx_row)
-        sizes = ["small", "medium", "large"]
-        cur = a.get("dock_size", "medium")
-        self.dock_size = dropdown(["Small", "Medium", "Large"], sizes.index(cur) if cur in sizes else 1,
-                                  lambda i: ui.save_appearance(dock_size=sizes[i]))
-        gc.append(ui.setting_row("Dock size", None, self.dock_size))
         self.body.append(gc)
+        self.body.append(self.dock_card(a))
         self._glass_id = None
         if "frost_vibrancy" not in load_state():
             # set up before the Glass slider (separate Frost and Tint): make the blur match the slider
             self.sync_blur(a["glass"])
+
+    # icon style -> icon theme (drawn by scripts/make-icons.py)
+    ICON_STYLES = (("color", "Glass", "Color"), ("clear", "Glass-Clear", "Clear"), ("dark", "Glass-Dark", "Dark"))
+    DOCK_PRESETS = {"small": 30, "medium": 36, "large": 46}   # what the old Dock size menu saved
+
+    def dock_card(self, a):
+        dc = ui.card("Dock & icons")
+        # Icon style, like iPhone's: each choice shows the Settings icon drawn that way
+        row = hbox(10)
+        self.style_buttons = []
+        cur = a.get("icon_style", "dark")
+        for key, theme, name in self.ICON_STYLES:
+            bt = Gtk.Button()
+            bt.add_css_class("icon-style")
+            v = vbox(4)
+            img = Gtk.Image()
+            path = f"/usr/share/icons/{theme}/scalable/apps/glass-files.svg"
+            if os.path.exists(path):
+                img.set_from_file(path)
+            else:
+                img.set_from_icon_name("glass-files")
+            img.set_pixel_size(48)
+            v.append(img)
+            v.append(label(name, "small"))
+            bt.set_child(v)
+            if key == cur:
+                bt.add_css_class("current")
+            bt.connect("clicked", lambda _b, k=key: self.on_icon_style(k))
+            self.style_buttons.append((key, bt))
+            row.append(bt)
+        dc.append(ui.setting_row("Icon style", "Color, clear glass that lets the wallpaper through, "
+                                 "or dark.", row))
+
+        size = a.get("dock_icon")
+        if not isinstance(size, (int, float)) or isinstance(size, bool):
+            size = self.DOCK_PRESETS.get(a.get("dock_size"), 36)
+        self.dock_size = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 24, 72, 1)
+        self.dock_size.set_draw_value(False)
+        self.dock_size.set_size_request(260, -1)
+        self.dock_size.set_value(size)
+        for v, txt in ((24, "Small"), (36, None), (72, "Large")):
+            self.dock_size.add_mark(v, Gtk.PositionType.BOTTOM, txt)
+        self.dock_size.connect("value-changed", lambda s: self.save_later("dock_icon", int(s.get_value())))
+        dc.append(ui.setting_row("Dock size", None, self.dock_size))
+
+        self.magnify = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
+        self.magnify.set_draw_value(False)
+        self.magnify.set_size_request(260, -1)
+        self.magnify.set_value(a.get("dock_magnify", 50))
+        for v, txt in ((0, "Off"), (50, None), (100, "Large")):
+            self.magnify.add_mark(v, Gtk.PositionType.BOTTOM, txt)
+        self.magnify.connect("value-changed", lambda s: self.save_later("dock_magnify", int(s.get_value())))
+        dc.append(ui.setting_row("Magnification", "Icons grow as the pointer passes over them.", self.magnify))
+
+        dc.append(ui.setting_row(
+            "Hide the dock automatically",
+            "Move the pointer to the bottom edge of the screen to bring it back. It also hides while a "
+            "window is full size.",
+            switch(bool(a.get("dock_autohide", False)), lambda on: ui.save_appearance(dock_autohide=on))))
+        self._save_ids = {}
+        return dc
+
+    def save_later(self, key, value):
+        """Sliders save a moment after they stop moving, so the dock isn't redrawn on every step."""
+        old = self._save_ids.pop(key, None)
+        if old:
+            GLib.source_remove(old)
+
+        def save():
+            self._save_ids.pop(key, None)
+            ui.save_appearance(**{key: value})
+            return False
+        self._save_ids[key] = GLib.timeout_add(150, save)
+
+    def on_icon_style(self, key):
+        theme = dict((k, t) for k, t, _n in self.ICON_STYLES)[key]
+        for k, b in self.style_buttons:
+            (b.add_css_class if k == key else b.remove_css_class)("current")
+        ui.save_appearance(icon_style=key)       # the dock follows appearance.json
+        Gtk.Settings.get_default().set_property("gtk-icon-theme-name", theme)
+        set_icon_theme(theme)
 
     @staticmethod
     def effects_note():
