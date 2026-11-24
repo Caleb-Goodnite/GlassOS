@@ -5,12 +5,12 @@ Left-click: open the app (or bring its window forward if it's already running).
 Right-click: new window / close / keep in dock.
 Pinned apps are listed in ~/.config/glassos/dock.conf.
 
-Pointing at the dock magnifies the icons near the pointer, like a Mac. While a window is full
+The dock's size comes from Settings > Appearance > Dock size; it always sits centred on the
+screen. The icon under the pointer lifts a little (Settings can turn that off). While a window is full
 size (or when "Hide the dock automatically" is on), the dock gets out of the way and comes back
 up when the pointer touches the bottom edge of the screen.
 """
 import json
-import math
 import os
 import shlex
 import socket
@@ -31,7 +31,6 @@ CONF = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.con
 APPEARANCE = os.path.join(os.path.dirname(CONF), "appearance.json")   # Settings > Appearance > Dock size
 SIZES = {"small": 30, "medium": 36, "large": 46}                       # icon size in pixels
 ICON_SIZE = SIZES["medium"]
-MAX_MAGNIFIED = 128                     # px: magnification never draws an icon bigger than this
 THEMES = {"color": "Glass", "clear": "Glass-Clear", "dark": "Glass-Dark"}   # Settings > Icon style
 
 
@@ -53,14 +52,18 @@ def dock_icon_size(a=None):
     return SIZES.get(a.get("dock_size"), SIZES["medium"])
 
 
-def dock_magnification(a=None):
-    """How big the icon under the pointer grows: 1 (off) to 2 (twice the size)."""
+def dock_hover_animation(a=None):
+    """Settings > Appearance > Animate icons on hover (on by default)."""
     a = appearance() if a is None else a
-    try:
-        v = max(0.0, min(100.0, float(a.get("dock_magnify", 50))))
-    except (TypeError, ValueError):
-        v = 50.0
-    return 1.0 + v / 100.0
+    return bool(a.get("dock_hover", True))
+
+
+HOVER_SCALE = 1.12    # how much the icon under the pointer grows, when hover animation is on
+
+
+def hover_lift(size):
+    """px the icon under the pointer rises."""
+    return round(size * 0.14)
 
 
 def dock_glass():
@@ -98,13 +101,13 @@ window.glass-dock { background: transparent; }
   padding: 3px 4px 0 4px;
   margin: 0 1px;
   border-radius: 16px;
-  transition: transform 110ms ease-out;
 }
-/* magnification (Dock.magnify sets each icon's size and the push sideways) */
-.dock-item image { transform-origin: 50% 100%; transition: transform 110ms ease-out; }
+/* The icon under the pointer lifts (sizes set in Dock.apply_size). Only the image moves, with a
+   transform, so the bar's layout and width never change and nothing beside it shifts. */
+.dock-item image { transform-origin: 50% 100%; }
+.dock.animate .dock-item image { transition: transform 150ms cubic-bezier(0.2, 0.9, 0.3, 1); }
 .dock-item:active image { opacity: 0.8; }
-.dock { transition: padding 110ms ease-out, transform 240ms cubic-bezier(0.2, 0.9, 0.3, 1); }
-.dock.settle, .dock.settle .dock-item, .dock.settle .dock-item image { transition-duration: 260ms; }
+.dock { transition: transform 240ms cubic-bezier(0.2, 0.9, 0.3, 1); }
 /* tucked below the screen edge while the dock is hidden */
 .dock.tucked { transform: translateY(140px); }
 .dot {
@@ -115,7 +118,7 @@ window.glass-dock { background: transparent; }
 .dot.running { background: alpha(#ffffff, 0.9); box-shadow: 0 0 4px alpha(#ffffff, 0.6); }
 .dot.focused { background: #ffffff; min-width: 12px; }
 .dot.running.minimized { background: alpha(#ffffff, 0.4); box-shadow: none; }
-.dock-sep { min-width: 1px; background: alpha(#ffffff, 0.25); margin: 10px 7px 12px 7px; transition: transform 110ms ease-out; }
+.dock-sep { min-width: 1px; background: alpha(#ffffff, 0.25); margin: 10px 7px 12px 7px; }
 popover.dock-menu > contents {
   background: alpha(#1d1e2b, 0.92);
   border: 1px solid alpha(#ffffff, 0.2);
@@ -348,8 +351,8 @@ class DockItem(Gtk.Button):
         self.add_controller(rc)
 
     def show_label(self):
-        """The app's name, floating above the magnified icon like on a Mac. (A tooltip would sit
-        on top of the icon: GTK places it against the unmagnified button.)"""
+        """The app's name, floating above the icon like on a Mac. (A tooltip would sit on top
+        of the lifted icon: GTK places it against the button.)"""
         if self.label_id:
             GLib.source_remove(self.label_id)
 
@@ -366,7 +369,8 @@ class DockItem(Gtk.Button):
                 self.label_pop.set_position(Gtk.PositionType.TOP)
                 self.label_pop.set_child(Gtk.Label(label=self.name))
                 self.label_pop.set_parent(self)
-            rise = round(ICON_SIZE * (self.dock.magnify_max - 1)) + 6
+            grow = hover_lift(ICON_SIZE) + round(ICON_SIZE * (HOVER_SCALE - 1))
+            rise = (grow if self.dock.hover_anim else 0) + 6
             r = Gdk.Rectangle()
             r.x, r.y, r.width, r.height = 0, -rise, max(1, self.get_width()), 1
             self.label_pop.set_pointing_to(r)
@@ -463,25 +467,13 @@ class Dock(Gtk.ApplicationWindow):
         self.size_css = Gtk.CssProvider()
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), self.size_css,
                                                   Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
-        # magnification: rewritten as the pointer moves, so it sits above everything else
-        self.mag_css = Gtk.CssProvider()
-        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), self.mag_css,
-                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 2)
-        self.magnify_max = dock_magnification()
-        self.pointer = None          # pointer x in the bar's coordinates, while it's over the dock
-        self.mag_pending = False
-        self.mag_active = False
-        # whether the pointer is anywhere on the dock (for hiding)...
+        self.hover_anim = None
+        self.size_key = None         # the CSS last loaded, so an unrelated settings change costs nothing
+        # whether the pointer is anywhere on the dock (for hiding)
         motion = Gtk.EventControllerMotion()
         motion.connect("enter", self.on_enter)
         motion.connect("leave", self.on_leave)
         self.add_controller(motion)
-        # ...and where it is along the bar, in the bar's own coordinates (the icons' too)
-        along = Gtk.EventControllerMotion()
-        along.connect("enter", self.on_motion)
-        along.connect("motion", self.on_motion)
-        along.connect("leave", self.on_bar_leave)
-        self.box.add_controller(along)
         # hiding: while a window is full size, or always with "Hide the dock automatically"
         self.autohide = bool(appearance().get("dock_autohide", False))
         self.fullscreen = False
@@ -510,7 +502,10 @@ class Dock(Gtk.ApplicationWindow):
         a = appearance()
         old_size = ICON_SIZE
         ICON_SIZE = dock_icon_size(a)
-        self.magnify_max = min(dock_magnification(a), max(1.0, MAX_MAGNIFIED / ICON_SIZE))
+        hover = dock_hover_animation(a)
+        if hover != self.hover_anim:
+            self.hover_anim = hover
+            (self.box.add_css_class if hover else self.box.remove_css_class)("animate")
         theme = THEMES.get(a.get("icon_style"), THEMES["dark"])
         if theme != self.icon_theme:
             self.icon_theme = theme
@@ -523,15 +518,20 @@ class Dock(Gtk.ApplicationWindow):
             GLib.idle_add(lambda: (self.update_hidden_mode(), False)[1])
         g = dock_glass()
         top, bottom = 0.15 + 0.07 * g, 0.08 + 0.08 * g   # clear glass barely tints; frosted is milkier
-        # room above the bar for magnified icons to grow into
-        headroom = max(22, round(ICON_SIZE * (self.magnify_max - 1)) + 10)
+        # room above the bar for a lifted icon: fixed for a given size, so the surface never resizes
+        # while the pointer moves (that resizing is what used to shove the dock off centre)
+        lift = hover_lift(ICON_SIZE)
+        headroom = max(22, lift + round(ICON_SIZE * (HOVER_SCALE - 1)) + 8)
         css = (f".dock {{ border-radius: {round((ICON_SIZE + 22) * 0.38)}px; margin-top: {headroom}px; "
                f"background-image: linear-gradient(180deg, alpha(#ffffff, {top:.3f}), alpha(#ffffff, {bottom:.3f})); }}"
-               f".dock.tucked {{ transform: translateY({ICON_SIZE + 60}px); }}")
-        if hasattr(self.size_css, "load_from_string"):
-            self.size_css.load_from_string(css)
-        else:
-            self.size_css.load_from_data(css.encode())
+               f".dock.tucked {{ transform: translateY({ICON_SIZE + 60}px); }}"
+               f".dock.animate .dock-item:hover image {{ transform: translateY(-{lift}px) scale({HOVER_SCALE}); }}")
+        if css != self.size_key:
+            self.size_key = css
+            if hasattr(self.size_css, "load_from_string"):
+                self.size_css.load_from_string(css)
+            else:
+                self.size_css.load_from_data(css.encode())
         # the bar is the icon plus 22 px of padding and dots, with 10 px under it; windows that
         # are maximized or tiled stop above it
         self.set_exclusive()
@@ -616,100 +616,21 @@ class Dock(Gtk.ApplicationWindow):
                             action=lambda: subprocess.Popen(["sh", "-c", "glass-sound launcher; fuzzel"]))
             self.box.append(apps)
             self.items["glass:apps"] = apps
-            for i, it in enumerate(self.items.values()):   # names the magnification rules use
-                it.set_name(f"di{i}")
-                it.icon.set_name(f"dim{i}")
-            self.queue_magnify()
 
         for k, it in self.items.items():
             it.set_windows(running.get(k, [None, []])[1], active)
         return True
 
 
-    # ------------------------------------------------------------------------- magnification
+    # ------------------------------------------------------------------------- pointer
     def on_enter(self, _c, _x, _y):
         self.hovering = True
         self.cancel_hide()
 
-    def on_motion(self, _c, x, _y):
-        self.pointer = x
-        self.queue_magnify()
-
-    def on_bar_leave(self, _c):
-        self.pointer = None
-        self.queue_magnify()
-
     def on_leave(self, _c):
         self.hovering = False
-        self.pointer = None
-        self.queue_magnify()
         if self.hidden_mode:
             self.schedule_hide()
-
-    def queue_magnify(self):
-        if not self.mag_pending:   # at most once per frame
-            self.mag_pending = True
-            self.add_tick_callback(lambda *_: self.magnify())
-
-    def magnify(self):
-        """Grow the icons near the pointer, push their neighbours aside and widen the bar to fit,
-        like the Dock on a Mac. Sizes fall off along a cosine about two and a half icons wide."""
-        self.mag_pending = False
-        items = list(self.items.values())
-        px = self.pointer if self.magnify_max > 1.01 else None
-        rules = []
-        pad = 0.0
-        if px is not None and items:
-            # where each icon sits with no magnification: the bar lays its children out in a row,
-            # and its coordinates start inside its padding, so the widening doesn't move them
-            # (the dividers move aside with the icons, but don't grow)
-            kids, centers, x, seps = [], [], 0.0, 0
-            child = self.box.get_first_child()
-            while child:
-                w = child.measure(Gtk.Orientation.HORIZONTAL, -1)[1]
-                if not isinstance(child, DockItem):
-                    child.set_name(f"ds{seps}")
-                    seps += 1
-                kids.append(child)
-                centers.append(x + w / 2)
-                x += w
-                child = child.get_next_sibling()
-            slot = ICON_SIZE + 10
-            reach = slot * 2.6
-            scale = []
-            for k, c in zip(kids, centers):
-                d = abs(px - c)
-                f = (1 + math.cos(math.pi * d / reach)) / 2 if d < reach and isinstance(k, DockItem) else 0.0
-                scale.append(1 + (self.magnify_max - 1) * f)
-            extra = [ICON_SIZE * (sc - 1) for sc in scale]
-            # each icon's growth pushes the others away from it; the spot under the pointer stays put
-            shift = []
-            for i, ci in enumerate(centers):
-                dx = 0.0
-                for j, cj in enumerate(centers):
-                    if j != i:
-                        dx += extra[j] * 0.5 * (1 if ci > cj else -1)
-                    dx -= extra[j] * 0.5 * max(-1.0, min(1.0, (px - cj) / (slot / 2)))
-                shift.append(dx)
-            left = max(0.0, -(shift[0] - extra[0] / 2))
-            right = max(0.0, shift[-1] + extra[-1] / 2)
-            pad = max(left, right)
-            for k, sc, dx in zip(kids, scale, shift):
-                rules.append(f"#{k.get_name()} {{ transform: translateX({dx:.1f}px); }}")
-                if isinstance(k, DockItem):
-                    rules.append(f"#{k.icon.get_name()} {{ transform: scale({sc:.3f}); }}")
-        active = bool(rules)
-        if active != self.mag_active:
-            self.mag_active = active
-            # settling back after the pointer leaves is a little slower than following it
-            (self.box.remove_css_class if active else self.box.add_css_class)("settle")
-        rules.append(f".dock {{ padding-left: {8 + pad:.1f}px; padding-right: {8 + pad:.1f}px; }}")
-        css = "\n".join(rules)
-        if hasattr(self.mag_css, "load_from_string"):
-            self.mag_css.load_from_string(css)
-        else:
-            self.mag_css.load_from_data(css.encode())
-        return False
 
     # ------------------------------------------------------------------------- hiding
     def update_hidden_mode(self):

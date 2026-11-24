@@ -723,14 +723,9 @@ class AppearancePage(Page):
         self.dock_size.connect("value-changed", lambda s: self.save_later("dock_icon", int(s.get_value())))
         dc.append(ui.setting_row("Dock size", None, self.dock_size))
 
-        self.magnify = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
-        self.magnify.set_draw_value(False)
-        self.magnify.set_size_request(260, -1)
-        self.magnify.set_value(a.get("dock_magnify", 50))
-        for v, txt in ((0, "Off"), (50, None), (100, "Large")):
-            self.magnify.add_mark(v, Gtk.PositionType.BOTTOM, txt)
-        self.magnify.connect("value-changed", lambda s: self.save_later("dock_magnify", int(s.get_value())))
-        dc.append(ui.setting_row("Magnification", "Icons grow as the pointer passes over them.", self.magnify))
+        dc.append(ui.setting_row(
+            "Animate icons on hover", "The icon under the pointer lifts a little.",
+            switch(bool(a.get("dock_hover", True)), lambda on: ui.save_appearance(dock_hover=on))))
 
         dc.append(ui.setting_row(
             "Hide the dock automatically",
