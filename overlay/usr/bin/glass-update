@@ -1,7 +1,7 @@
 #!/bin/bash
 # GlassOS software updates. Nothing updates behind your back; this is the only way it happens.
 echo
-echo "  GlassOS gets its software straight from Debian's servers."
+echo "  GlassOS updates come from Debian (security fixes, kernel, apps) and from GlassOS itself."
 echo "  This checks for updates and shows you everything before anything is installed."
 echo
 sudo apt-get update || { read -rp "Could not reach the update servers. Press Enter to close."; exit 1; }
@@ -15,5 +15,5 @@ printf '  %s\n' "${up[@]}"
 echo
 read -rp "  Install these ${#up[@]} updates? [Y/n] " a
 case "$a" in [nN]*) exit 0 ;; esac
-sudo apt-get full-upgrade -y && glass-sound notification
+sudo apt-get full-upgrade -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold && glass-sound notification
 read -rp "  Done. Press Enter to close."

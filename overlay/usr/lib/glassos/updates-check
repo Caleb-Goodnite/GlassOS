@@ -1,0 +1,5 @@
+#!/bin/sh
+# Settings > Software Update > Check: refresh the list of available software from Debian and
+# GlassOS. Run as root through pkexec; changes nothing installed.
+export DEBIAN_FRONTEND=noninteractive
+exec apt-get update -q -o Acquire::Retries=2

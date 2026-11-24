@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- Settings > Software Update. Checking only refreshes the list of what's available, so the
+     person at the computer can do it without a password. Installing asks for an admin's. -->
+<policyconfig>
+  <vendor>GlassOS</vendor>
+  <action id="os.glass.updates.check">
+    <description>Check for software updates</description>
+    <message>Settings wants to check for software updates.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/glassos/updates-check</annotate>
+  </action>
+  <action id="os.glass.updates.install">
+    <description>Install software updates</description>
+    <message>Settings wants to install software updates. Type an administrator's password to allow this.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/glassos/updates-install</annotate>
+  </action>
+</policyconfig>
