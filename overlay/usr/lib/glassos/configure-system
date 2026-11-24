@@ -71,8 +71,11 @@ APT::Periodic::Unattended-Upgrade "0";
 EOF
 # the sound daemon starts with the desktop (session-start), not from a target
 systemctl --global disable waybar.service mako.service hypridle.service foot-server.service >/dev/null 2>&1 || true
-# a crashed graphics stack shouldn't leave you staring at a black screen: text login on tty1-6 stays
-systemctl enable getty@tty1.service >/dev/null 2>&1 || true
+# The login screen runs on tty1, straight after the boot splash, so no text login prompt flashes
+# up in between. Text logins stay on Ctrl+Alt+F2 to F6 if the graphics ever fail.
+systemctl disable getty@tty1.service >/dev/null 2>&1 || true
+# computers installed before this had the login screen on tty7 (applies at the next restart)
+[ -f /etc/greetd/config.toml ] && sed -i 's/^vt = 7$/vt = 1/' /etc/greetd/config.toml
 
 say "trimming files nobody needs (and keeping them out on updates)"
 cat > /etc/dpkg/dpkg.cfg.d/50glassos-trim <<'EOF'

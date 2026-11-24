@@ -25,6 +25,8 @@ done
 sleep 0.3
 
 echo "GlassOS: playing boot sound $f"
+# the desktop skips its login chime right after this, so you hear one sound, not two
+mkdir -p /run/glassos && touch /run/glassos/boot-sound-played
 # "sysdefault" is the sound card itself. ALSA's "default" goes through PipeWire, which isn't
 # running this early, so it would fail with "Host is down".
 AUDIODRIVER=alsa AUDIODEV=sysdefault timeout 10 play -q -v "$vol" "$f" 2>/dev/null || \

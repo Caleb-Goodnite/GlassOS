@@ -186,7 +186,7 @@ rm -f "$T/etc/sudoers.d/glassos-live" "$T/usr/share/applications/glass-install.d
 {
   echo "# GlassOS login manager (written by the installer)"
   echo "[terminal]"
-  echo "vt = 7"
+  echo "vt = 1"
   echo
   echo "[default_session]"
   echo 'command = "glass-greeter"'

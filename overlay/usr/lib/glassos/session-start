@@ -42,8 +42,9 @@ systemctl --user start glass-soundd.service 2>/dev/null
 
 xdg-user-dirs-update 2>/dev/null
 
-# Login chime from your sound pack
-glass-sound login
+# Login chime from your sound pack, unless the boot sound just played (automatic login)
+played="$(stat -c %Y /run/glassos/boot-sound-played 2>/dev/null || echo 0)"
+[ $(( $(date +%s) - played )) -lt 90 ] || glass-sound login
 
 # First run: show the welcome tour
 if [ ! -f "$CONF/glassos/.welcomed" ]; then
