@@ -145,6 +145,10 @@ mkdir -p "$T/boot/efi"
 mount "$ESP" "$T/boot/efi"
 
 step "Setting up your system"
+# GlassOS's own files must have arrived (a Dell install once lacked the login screen program)
+for f in usr/bin/glass-greeter usr/bin/glass-session usr/share/glassos/build-info; do
+  [ -e "$T/$f" ] || die "GlassOS files are missing from the copy (/$f). Try another USB stick or ISO."
+done
 ROOT_UUID="$(blkid -s UUID -o value "$ROOTP")"
 ESP_UUID="$(blkid -s UUID -o value "$ESP")"
 fallocate -l 2G "$T/swapfile" && chmod 600 "$T/swapfile" && mkswap -q "$T/swapfile"
