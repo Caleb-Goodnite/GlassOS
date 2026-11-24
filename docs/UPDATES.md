@@ -59,10 +59,17 @@ to people who aren't testing it.
   the plugin, which today only the ISO build does.
 - **Settings files in `/etc`** that you edited are kept (`--force-confold`); unedited ones are
   replaced.
-- **The live USB** can check for updates but not install them: they'd be gone at the next boot.
-- **Computers installed before updates existed** don't have the GlassOS key or source. Reinstall
-  from a new ISO, or copy `glassos-archive-keyring.gpg` from the repository site to
-  `/usr/share/keyrings/` and install the newest `glassos-desktop` .deb by hand.
+- **Computers (and VMs) set up before updates existed** have no GlassOS key, update source or
+  pkexec. One command turns updates on, then Settings > Software Update does the rest:
+
+  ```
+  curl -fsSL https://caleb-goodnite.github.io/GlassOS/setup.sh | sudo bash
+  ```
+
+  (`... | sudo bash -s stable` for the stable channel.) It's `scripts/updates-setup.sh`, published
+  with every update.
+- **The live USB** can install updates, which is handy for testing, but they're gone at the next
+  boot.
 
 ## Testing an update before merging
 
