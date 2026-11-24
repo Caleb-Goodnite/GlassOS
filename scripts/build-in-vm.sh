@@ -121,8 +121,33 @@ stage_rootfs() {
   in_chroot apt-get install -y ${main//,/ }
   # shellcheck disable=SC2086
   in_chroot apt-get install -y -t "$DEBIAN_SUITE-backports" $bpo
+  build_hyprbars
   in_chroot apt-get clean
   umount_chroot
+}
+
+# Title bars with the red/yellow/green buttons on every window come from Hyprland's official
+# hyprbars plugin. A plugin only loads into the exact Hyprland version it was compiled against,
+# and Debian's packaged one is older than our Hyprland, so we compile it here against the
+# hyprland-dev headers of the Hyprland we just installed. The build tools are removed again.
+HYPRBARS_TAG=v0.55.0   # hyprland-plugins tag for Hyprland 0.55.x; move it with every Hyprland upgrade
+build_hyprbars() {
+  local so=/usr/lib/glassos/hyprland/libhyprbars.so before added
+  log "Compiling the hyprbars title-bar plugin ($HYPRBARS_TAG)"
+  before="$(in_chroot dpkg-query -W -f='${Package}\n' | sort)"
+  in_chroot apt-get install -y -t "$DEBIAN_SUITE-backports" hyprland-dev
+  in_chroot apt-get install -y cmake make g++ pkg-config git ca-certificates
+  rm -rf "$ROOT/tmp/hp"
+  in_chroot git clone --depth 1 -b "$HYPRBARS_TAG" https://github.com/hyprwm/hyprland-plugins /tmp/hp
+  in_chroot cmake -S /tmp/hp/hyprbars -B /tmp/hp/build -DCMAKE_BUILD_TYPE=Release
+  in_chroot cmake --build /tmp/hp/build -j"$(nproc)"
+  install -Dm644 "$ROOT/tmp/hp/build/libhyprbars.so" "$ROOT$so"
+  rm -rf "$ROOT/tmp/hp"
+  # remove only what this step installed (keeps ca-certificates etc. if the system already had them)
+  added="$(comm -13 <(echo "$before") <(in_chroot dpkg-query -W -f='${Package}\n' | sort) | paste -sd' ' -)"
+  # shellcheck disable=SC2086
+  [ -n "$added" ] && in_chroot apt-get purge -y --auto-remove $added
+  [ -s "$ROOT$so" ] || { echo "hyprbars plugin was not built ($so missing)" >&2; exit 1; }
 }
 
 stage_assets() {

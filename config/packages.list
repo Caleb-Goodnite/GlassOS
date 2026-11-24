@@ -87,6 +87,10 @@ libspa-0.2-bluetooth        # Bluetooth headphones and speakers
 ## Desktop (Wayland)
 hyprland [bpo]              # the compositor: draws windows, blur, animations
 hyprland-guiutils [bpo]     # small helper dialogs Hyprland uses (e.g. "app not responding")
+# Not a package: the hyprbars plugin (title bars with the red/yellow/green window buttons) is
+# compiled during the build from hyprland-plugins tag v0.55.0, against hyprland-dev 0.55.x from
+# backports, because a plugin only loads into the exact Hyprland it was built for. See
+# build_hyprbars in scripts/build-in-vm.sh. It lives at /usr/lib/glassos/hyprland/libhyprbars.so.
 hyprlock [bpo]              # lock screen
 hypridle [bpo]              # locks and dims the screen when idle
 xwayland                    # runs older X11 apps
