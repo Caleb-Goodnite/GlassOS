@@ -954,7 +954,7 @@ IDLE_CHOICES = [(60, "1 minute"), (120, "2 minutes"), (300, "5 minutes"), (600, 
                 (900, "15 minutes"), (1800, "30 minutes"), (3600, "1 hour"), (0, "Never")]
 
 
-def write_hypridle(dim, lock, off):
+def write_hypridle(dim, lock, off, sleep=900):
     parts = ["# GlassOS idle behaviour. Written by Settings > Power & Lock.",
              "general {",
              "    lock_cmd = pidof hyprlock || glass-lock",
@@ -970,6 +970,9 @@ def write_hypridle(dim, lock, off):
         parts += ["listener {", f"    timeout = {off}",
                   "    on-timeout = hyprctl dispatch 'hl.dsp.dpms({action = \"off\"})'",
                   "    on-resume = hyprctl dispatch 'hl.dsp.dpms({action = \"on\"})'", "}", ""]
+    if sleep:
+        parts += ["listener {", f"    timeout = {sleep}",
+                  "    on-timeout = /usr/lib/glassos/sleep-on-battery", "}", ""]
     with open(IDLE, "w") as f:
         f.write("\n".join(parts))
     run(["pkill", "-x", "hypridle"])
@@ -983,7 +986,7 @@ class PowerPage(Page):
     def __init__(self, win):
         super().__init__(win)
         self.header("Power & Lock", "What happens when you step away.")
-        st = load_state().get("idle", {"dim": 300, "lock": 600, "off": 660})
+        st = {"dim": 300, "lock": 600, "off": 660, "sleep": 900, **load_state().get("idle", {})}
         c = ui.card()
         self.sel = {}
         labels = [t for _, t in IDLE_CHOICES]
@@ -993,7 +996,8 @@ class PowerPage(Page):
 
         for key, title, sub in (("dim", "Dim the screen after", None),
                                 ("lock", "Lock after", "You'll need your password to get back in."),
-                                ("off", "Turn the screen off after", None)):
+                                ("off", "Turn the screen off after", None),
+                                ("sleep", "On battery, sleep after", "Plugged in, the computer stays awake.")):
             v = st.get(key, 0)
             if key == "off" and v == 660:
                 v = 900
@@ -1009,7 +1013,7 @@ class PowerPage(Page):
     def apply(self):
         vals = {k: IDLE_CHOICES[dd.get_selected()][0] for k, dd in self.sel.items()}
         save_state({"idle": vals})
-        write_hypridle(vals["dim"], vals["lock"], vals["off"])
+        write_hypridle(vals["dim"], vals["lock"], vals["off"], vals["sleep"])
 
     def refresh(self):
         try:
