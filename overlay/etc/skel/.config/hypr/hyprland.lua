@@ -263,7 +263,8 @@ watch:set_enabled(false)
 
 hl.on("window.fullscreen", function(w)
     w = w or hl.get_active_window()
-    if w and w.fullscreen == 1 then                     -- the app asked to be maximized
+    -- the app asked to be maximized (client 1); a zoom (below) is maximized with client 0
+    if w and w.fullscreen == 1 and w.fullscreen_client == 1 then
         set_fullscreen(w.address, 2, 1)
         full_size[w.address] = true
         watch:set_enabled(true)
@@ -277,7 +278,9 @@ end)
 -- the focused window: clicking a button focuses its window first.
 --   "close"    red: closes the window
 --   "minimize" yellow: hides it on the "minimized" desktop; click its app in the dock to get it back
---   "full"     green (or a double-click on the title bar): full size and back
+--   "full"     green: full size (covers the top bar and dock) and back
+--   "zoom"     a double-click on the title bar: fill the space between the top bar and the dock,
+--              and back, like double-clicking a title bar on a Mac
 function glass_window(action)
     local w = hl.get_active_window()
     if not w then return end
@@ -295,6 +298,9 @@ function glass_window(action)
             full_size[w.address] = true
             watch:set_enabled(true)
         end
+    elseif action == "zoom" then
+        full_size[w.address] = nil
+        set_fullscreen(w.address, w.fullscreen == 0 and 1 or 0, 0)
     end
 end
 
@@ -320,7 +326,7 @@ if hl.plugin.hyprbars then
         bar_precedence_over_border = true,
         icon_on_hover         = true,                  -- symbols show when the pointer is over them, like a Mac
         inactive_button_color = "rgba(ffffff38)",     -- grey buttons on windows that aren't focused
-        on_double_click       = [[hyprctl eval 'glass_window("full")']],
+        on_double_click       = [[hyprctl eval 'glass_window("zoom")']],
     } } })
     -- left to right; the colours are macOS's
     for _, b in ipairs({
