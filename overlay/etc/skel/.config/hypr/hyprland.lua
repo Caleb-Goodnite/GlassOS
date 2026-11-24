@@ -208,17 +208,27 @@ local function vec(v)
     return v.x or v[1], v.y or v[2]
 end
 
-local function keep_on_screen(w)
-    if not w or not w.floating or w.fullscreen ~= 0 or not w.monitor then return end
-    local m = w.monitor
+-- The part of a screen windows live in: the whole screen minus the top bar (and, with
+-- avoid_dock, minus the dock at the bottom, for windows snapped to half the screen)
+local function work_area(m, avoid_dock)
     local mw, mh = m.width / m.scale, m.height / m.scale
     if m.transform % 2 == 1 then mw, mh = mh, mw end
     local left, top, right, bottom = m.x, m.y, m.x + mw, m.y + mh
     for _, l in ipairs(hl.get_layers()) do
-        if l.namespace == "waybar" and l.monitor and l.monitor.id == m.id and l.y < m.y + mh / 2 then
-            top = math.max(top, l.y + l.h + 6)
+        if l.monitor and l.monitor.id == m.id then
+            if l.namespace == "waybar" and l.y < m.y + mh / 2 then
+                top = math.max(top, l.y + l.h + 6)
+            elseif avoid_dock and l.namespace == "glass-dock" and l.y > m.y + mh / 2 then
+                bottom = math.min(bottom, l.y - 6)
+            end
         end
     end
+    return left, top, right, bottom
+end
+
+local function keep_on_screen(w)
+    if not w or not w.floating or w.fullscreen ~= 0 or not w.monitor then return end
+    local left, top, right, bottom = work_area(w.monitor)
     local x, y = vec(w.at)
     local ww, wh = vec(w.size)
     if not x or not ww then return end
@@ -233,8 +243,73 @@ local function keep_on_screen(w)
     end
 end
 
-hl.bind("mouse:272", function() keep_on_screen(hl.get_active_window()) end,
-        { release = true, non_consuming = true, ignore_mods = true })
+-- Split screen: drag a window until the pointer touches the left or right edge of the screen
+-- and let go, and it fills that half (Super+Left / Super+Right do the same). Drag it away from
+-- the edge and it gets its old size back.
+local snapped = {}   -- address -> { w, h, side, x, y } (its size before snapping, and where it snapped to)
+
+local function snap(w, side)
+    if not w or not w.monitor then return end
+    if w.fullscreen ~= 0 then
+        hl.dispatch(hl.dsp.window.fullscreen_state({ internal = 0, client = 0, window = "address:" .. w.address }))
+    end
+    if not w.floating then hl.dispatch(hl.dsp.window.float({ action = "set", window = "address:" .. w.address })) end
+    local left, top, right, bottom = work_area(w.monitor, true)
+    local gap = 8
+    local half = math.floor((right - left - 3 * gap) / 2)
+    local x = side == "left" and left + gap or left + 2 * gap + half
+    -- the hyprbars title bar sits above the window's own top edge (GlassOS apps draw theirs inside)
+    local bar = (hl.plugin.hyprbars and not tostring(w.class or ""):match("^os%.glass%.")) and 34 or 0
+    local y, h = top + bar, math.floor(bottom - top - bar)
+    local prev = snapped[w.address]
+    local ww, wh = vec(w.size)
+    snapped[w.address] = { w = prev and prev.w or ww, h = prev and prev.h or wh, side = side, x = math.floor(x), y = math.floor(y) }
+    local sel = "address:" .. w.address
+    hl.dispatch(hl.dsp.window.resize({ x = half, y = h, exact = true, window = sel }))
+    hl.dispatch(hl.dsp.window.move({ x = math.floor(x), y = math.floor(y), window = sel }))
+end
+
+-- Back to the size it had before snapping, keeping it under the pointer
+local function unsnap(w, cursor)
+    local s = w and snapped[w.address]
+    if not s then return end
+    snapped[w.address] = nil
+    local sel = "address:" .. w.address
+    hl.dispatch(hl.dsp.window.resize({ x = math.floor(s.w), y = math.floor(s.h), exact = true, window = sel }))
+    if cursor then
+        hl.dispatch(hl.dsp.window.move({ x = math.floor(cursor.x - s.w / 2), y = math.floor(cursor.y - 15), window = sel }))
+    end
+end
+
+-- A left-button press remembers where the window was, so letting go can tell a drag from a click
+local press = nil
+hl.bind("mouse:272", function()
+    local w = hl.get_active_window()
+    local x, y = w and vec(w.at)
+    press = w and { address = w.address, x = x, y = y } or nil
+end, { non_consuming = true, ignore_mods = true })
+
+hl.bind("mouse:272", function()
+    local w = hl.get_active_window()
+    local p = press
+    press = nil
+    if not w then return end
+    local x, y = vec(w.at)
+    local moved = p and p.address == w.address and x and (math.abs(x - p.x) > 3 or math.abs(y - p.y) > 3)
+    local cursor = hl.get_cursor_pos()
+    if moved and cursor and w.monitor and w.floating and w.fullscreen == 0 then
+        local m = w.monitor
+        local mw = (m.transform % 2 == 1 and m.height or m.width) / m.scale
+        if cursor.x <= m.x + 8 then snap(w, "left") return end
+        if cursor.x >= m.x + mw - 8 then snap(w, "right") return end
+        local s = snapped[w.address]
+        if s and (x ~= s.x or y ~= s.y) then unsnap(w, cursor) end
+    end
+    keep_on_screen(hl.get_active_window())
+end, { release = true, non_consuming = true, ignore_mods = true })
+
+-- forget windows that close
+hl.on("window.close", function(w) if w and w.address then snapped[w.address] = nil end end)
 
 -- Make full size (the maximize button, or double-clicking a title bar) works like full screen
 -- on a Mac: the window covers the whole screen and the top bar and dock get out of the way. The
@@ -392,10 +467,14 @@ hl.bind("Print",               hl.dsp.exec_cmd("glass-screenshot screen"))
 hl.bind(mod .. " + SHIFT + S", hl.dsp.exec_cmd("glass-screenshot area"), { description = "Screenshot an area" })
 
 -- Focus / move
-hl.bind(mod .. " + left",  hl.dsp.focus({ direction = "left" }))
-hl.bind(mod .. " + right", hl.dsp.focus({ direction = "right" }))
-hl.bind(mod .. " + up",    hl.dsp.focus({ direction = "up" }))
-hl.bind(mod .. " + down",  hl.dsp.focus({ direction = "down" }))
+-- Super+Left / Super+Right: snap the window to that half of the screen (split screen)
+hl.bind(mod .. " + left",  function() snap(hl.get_active_window(), "left") end,  { description = "Snap window to the left half" })
+hl.bind(mod .. " + right", function() snap(hl.get_active_window(), "right") end, { description = "Snap window to the right half" })
+-- Super+Alt+arrows: move the focus to the window in that direction
+hl.bind(mod .. " + ALT + left",  hl.dsp.focus({ direction = "left" }))
+hl.bind(mod .. " + ALT + right", hl.dsp.focus({ direction = "right" }))
+hl.bind(mod .. " + ALT + up",    hl.dsp.focus({ direction = "up" }))
+hl.bind(mod .. " + ALT + down",  hl.dsp.focus({ direction = "down" }))
 hl.bind("ALT + TAB",       hl.dsp.window.cycle_next())
 
 -- Workspaces ("desktops"): Super+1..9, Super+Ctrl+arrows, or 3-finger swipe
