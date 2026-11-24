@@ -711,6 +711,11 @@ class AppearancePage(Page):
         fx_row = ui.setting_row("Effects", None, self.fx)
         fx_row.get_first_child().append(self.fx_sub)
         gc.append(fx_row)
+        sizes = ["small", "medium", "large"]
+        cur = a.get("dock_size", "medium")
+        self.dock_size = dropdown(["Small", "Medium", "Large"], sizes.index(cur) if cur in sizes else 1,
+                                  lambda i: ui.save_appearance(dock_size=sizes[i]))
+        gc.append(ui.setting_row("Dock size", None, self.dock_size))
         self.body.append(gc)
         self._frost_id = None
 
