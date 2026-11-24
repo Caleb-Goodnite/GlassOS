@@ -207,7 +207,17 @@ inc update-initramfs -u -k all
 step "Installing the GRUB boot loader"
 install -d "$T/boot/grub/themes"
 rm -rf "$T/boot/grub/themes/glassos"
-cp -r "$T/usr/share/glassos/grub-theme" "$T/boot/grub/themes/glassos"
+# the boot menu's look: from the installed system, else from the USB stick, else plain menu
+theme=""
+for d in "$T/usr/share/glassos/grub-theme" /run/live/medium/boot/grub/themes/glassos; do
+  [ -f "$d/theme.txt" ] && { theme="$d"; break; }
+done
+if [ -n "$theme" ]; then
+  cp -r "$theme" "$T/boot/grub/themes/glassos"
+else
+  say "(No boot menu theme found: the boot menu will be plain text.)"
+  sed -i 's/^GRUB_THEME=/#GRUB_THEME=/' "$T/etc/default/grub" 2>/dev/null || true
+fi
 if mountpoint -q /sys/firmware/efi/efivars 2>/dev/null; then :; elif [ -d /sys/firmware/efi/efivars ]; then
   mount -t efivarfs efivarfs "$T/sys/firmware/efi/efivars" 2>/dev/null || true
 fi
