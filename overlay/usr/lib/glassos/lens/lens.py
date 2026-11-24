@@ -23,7 +23,7 @@ import glassui  # noqa: E402
 import sysinfo as si  # noqa: E402
 
 APP_ID = "os.glass.Lens"
-REFRESH_MS = 2000
+REFRESH_MS = 667   # two-thirds of a second: 1 s felt slow, half a second too busy
 C = {k: v[1] for k, v in si.CATEGORIES.items()}
 
 CSS = """
@@ -197,7 +197,7 @@ def fmt_duration(s):
 class Spark(Gtk.DrawingArea):
     """Rolling line chart."""
 
-    def __init__(self, color, maxlen=90, height=46, maxval=None, second=None):
+    def __init__(self, color, maxlen=180_000 // REFRESH_MS, height=46, maxval=None, second=None):   # 3 minutes
         super().__init__()
         self.vals, self.vals2 = [], []
         self.color = rgb(color)
@@ -517,7 +517,7 @@ class OverviewPage(Page):
 
         pies = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True,
                            min_children_per_line=1, max_children_per_line=2, column_spacing=16, row_spacing=16)
-        c = card("Who is using the processor", "Share of the whole CPU over the last 2 seconds.")
+        c = card("Who is using the processor", "Share of the whole CPU, updated every two-thirds of a second.")
         row = hbox(22)
         self.cpu_pie = Donut()
         row.append(self.cpu_pie)

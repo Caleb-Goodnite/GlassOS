@@ -93,6 +93,11 @@ Screenshots: press Print (or Super+Shift+S for an area). They go to Pictures > S
       drag any window's edge or corner to resize it
 - [ ] Super+drag moves a window from anywhere; Super+right-drag resizes it
 - [ ] Every window fits on the screen when it opens, including Glass Lens and Settings
+- [ ] Drag a window (title bar or Super+drag) past an edge or under the top bar and let go: it slides back
+      fully on screen, below the top bar
+- [ ] The maximize button (or double-clicking a title bar) fills the whole screen and hides the top bar and
+      dock; pressing it again puts the window back where it was
+- [ ] Settings > Appearance > Dock size changes the dock straight away
 - [ ] Super+1 to Super+9 switch desktops
 - [ ] Notifications appear top-right with a sound (try `notify-send "Test" "Hello"` in Terminal)
 
@@ -115,6 +120,7 @@ Screenshots: press Print (or Super+Shift+S for an area). They go to Pictures > S
 
 ### Glass Lens (where the hardware goes)
 - [ ] Overview numbers move and roughly match `top` in Terminal
+- [ ] Click through every page a few times, then check `top` in Terminal: Glass Lens stays at a few percent
 - [ ] The processor and memory rings split into apps, desktop, system and kernel, and ease when they change
 - [ ] Apps & Services lists every open app by its real name with a plain-English reason
 - [ ] Closing an app removes it from the list
