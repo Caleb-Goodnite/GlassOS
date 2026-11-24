@@ -122,6 +122,7 @@ hl.config({
             vibrancy  = pick(S.frost_vibrancy, 0.59),     -- keeps the wallpaper's colour in the glass
             vibrancy_darkness = 0.4,                       -- ...in its dark parts too, not just the bright ones
             popups    = true,
+            popups_ignorealpha = 0.5,   -- blur only behind a menu itself, not the see-through space around its rounded corners
             new_optimizations = true,
             xray      = M.light or false,
         },

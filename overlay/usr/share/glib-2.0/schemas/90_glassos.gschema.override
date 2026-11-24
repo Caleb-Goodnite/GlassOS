@@ -13,7 +13,7 @@ font-antialiasing='rgba'
 font-hinting='slight'
 
 [org.gnome.desktop.wm.preferences]
-button-layout='close,maximize:'
+button-layout='close,minimize,maximize:'
 
 [org.gnome.desktop.sound]
 theme-name='glassos'
