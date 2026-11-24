@@ -189,7 +189,25 @@ TRAFFIC_LIGHTS_CSS = """
 .traffic-lights button.tl-min { background-color: #febc2e; }
 .traffic-lights button.tl-full { background-color: #28c840; }
 window.glass:backdrop .traffic-lights:not(:hover) button { background-color: alpha(#ffffff, 0.22); }
+/* Windows that keep GTK's own buttons (dialogs such as a folder picker) get the same three dots */
+windowcontrols { border-spacing: 8px; }
+windowcontrols > button { min-width: 13px; min-height: 13px; padding: 0; margin: 0; border-radius: 99px;
+                          border: none; background-image: none; box-shadow: inset 0 0 0 0.5px alpha(#000, 0.25); }
+windowcontrols > button > image { background: none; box-shadow: none; padding: 0; margin: 0;
+                                  -gtk-icon-size: 9px; color: transparent; }
+windowcontrols:hover > button > image { color: alpha(#000, 0.6); }
+windowcontrols > button.close { background-color: #ff5f57; }
+windowcontrols > button.minimize { background-color: #febc2e; }
+windowcontrols > button.maximize { background-color: #28c840; }
+window:backdrop windowcontrols:not(:hover) > button { background-color: alpha(#ffffff, 0.22); }
+/* Menus: only the rounded panel is drawn, with no square backing behind it */
+popover.background, popover.menu { background: transparent; box-shadow: none; }
+tooltip.background { background-color: alpha(#1c1d2a, 0.92); border: 1px solid alpha(#ffffff, 0.18);
+                     border-radius: 12px; box-shadow: none; }
 """
+
+# GTK's own window buttons, in the same order as the dots everywhere else
+DECORATION_LAYOUT = "close,minimize,maximize:"
 
 
 _css = {"prov": None, "extra": ""}
@@ -206,6 +224,10 @@ def _load_css(prov, extra):
 def apply_css(extra=""):
     prov = Gtk.CssProvider()
     _load_css(prov, extra)
+    try:
+        Gtk.Settings.get_default().set_property("gtk-decoration-layout", DECORATION_LAYOUT)
+    except Exception:
+        pass
     Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), prov,
                                               Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
     _css.update(prov=prov, extra=extra)

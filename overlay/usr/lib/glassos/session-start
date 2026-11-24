@@ -8,9 +8,20 @@ desk() {  # desk <unit-name> <command...>
     --unit="glass-$name" --description="GlassOS desktop: $name" -- "$@" >/dev/null 2>&1 &
 }
 
-# Let user services (sound daemon, portals) talk to this Wayland session
+# Every window needs a title bar to close it. Hyprland's hyprbars plugin draws one on other apps'
+# windows; if the plugin is missing or failed to load, older (GTK 3) apps such as Files draw their
+# own instead (GTK_CSD=1), with the same red/yellow/green buttons (gtk-3.0/gtk.css).
+if [ "$GTK_CSD" != 1 ] && ! hyprctl plugin list 2>/dev/null | grep -qi hyprbars; then
+  export GTK_CSD=1
+  hyprctl eval 'hl.env("GTK_CSD", "1")' >/dev/null 2>&1   # for apps Hyprland starts (shortcuts)
+fi
+csd=""
+[ "$GTK_CSD" = 1 ] && csd=GTK_CSD
+
+# Let user services (sound daemon, portals) talk to this Wayland session. Files runs as a
+# background service that D-Bus starts, so it only sees what is passed on here (GTK_CSD too).
 dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP \
-  XDG_SESSION_TYPE HYPRLAND_INSTANCE_SIGNATURE DISPLAY XCURSOR_THEME XCURSOR_SIZE 2>/dev/null
+  XDG_SESSION_TYPE HYPRLAND_INSTANCE_SIGNATURE DISPLAY XCURSOR_THEME XCURSOR_SIZE $csd 2>/dev/null
 
 # After a GlassOS update: bring your top bar, Hyprland and other settings files up to date
 # (your own edits are kept; see /usr/lib/glassos/config-sync)

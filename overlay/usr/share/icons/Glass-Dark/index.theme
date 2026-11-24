@@ -1,0 +1,12 @@
+[Icon Theme]
+Name=Glass-Dark
+Comment=GlassOS app icons (Dark); everything else comes from Papirus-Dark
+Inherits=Papirus-Dark,hicolor
+Directories=scalable/apps
+
+[scalable/apps]
+Size=64
+MinSize=16
+MaxSize=512
+Type=Scalable
+Context=Applications

@@ -318,7 +318,7 @@ class GreeterApp(Gtk.Application):
 
     def do_activate(self):
         st = Gtk.Settings.get_default()
-        st.set_property("gtk-icon-theme-name", "Papirus-Dark")
+        st.set_property("gtk-icon-theme-name", "Glass-Dark")
         st.set_property("gtk-font-name", "Inter 11")
         st.set_property("gtk-application-prefer-dark-theme", True)
         ui.apply_css(CSS)

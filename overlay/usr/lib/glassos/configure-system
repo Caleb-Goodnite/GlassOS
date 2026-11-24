@@ -110,7 +110,7 @@ say "caches (schemas, fonts, icons, apps)"
 # Debian keeps the schema compiler inside libglib (the -bin package isn't needed)
 "$(ls /usr/lib/*/glib-2.0/glib-compile-schemas | head -n1)" /usr/share/glib-2.0/schemas
 fc-cache -f >/dev/null
-for t in /usr/share/icons/hicolor /usr/share/icons/Papirus /usr/share/icons/Papirus-Dark; do
+for t in /usr/share/icons/hicolor /usr/share/icons/Papirus /usr/share/icons/Papirus-Dark /usr/share/icons/Glass /usr/share/icons/Glass-Clear /usr/share/icons/Glass-Dark; do
   [ -d "$t" ] && gtk-update-icon-cache -qf "$t" || true
 done
 update-desktop-database -q /usr/share/applications /usr/local/share/applications || true

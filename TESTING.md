@@ -45,7 +45,7 @@ to judge speed.
 
 ## On a real PC
 
-1. Write `out/GlassOS-1.0.0-amd64.iso` to a USB stick (4 GB or larger) with balenaEtcher.
+1. Write `out/GlassOS-1.5.0-amd64.iso` to a USB stick (4 GB or larger) with balenaEtcher.
 2. Turn off Secure Boot in the PC's firmware settings.
 3. Start the PC from the stick and pick **Try GlassOS**. Try mode runs from the stick and doesn't
    touch the PC's disks, so it's the safe way to check Wi-Fi, sound and graphics.

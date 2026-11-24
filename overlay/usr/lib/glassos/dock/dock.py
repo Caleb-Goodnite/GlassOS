@@ -4,6 +4,11 @@
 Left-click: open the app (or bring its window forward if it's already running).
 Right-click: new window / close / keep in dock.
 Pinned apps are listed in ~/.config/glassos/dock.conf.
+
+The dock's size comes from Settings > Appearance > Dock size; it always sits centred on the
+screen. The icon under the pointer lifts a little (Settings can turn that off). While a window is full
+size (or when "Hide the dock automatically" is on), the dock gets out of the way and comes back
+up when the pointer touches the bottom edge of the screen.
 """
 import json
 import os
@@ -26,14 +31,39 @@ CONF = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.con
 APPEARANCE = os.path.join(os.path.dirname(CONF), "appearance.json")   # Settings > Appearance > Dock size
 SIZES = {"small": 30, "medium": 36, "large": 46}                       # icon size in pixels
 ICON_SIZE = SIZES["medium"]
+THEMES = {"color": "Glass", "clear": "Glass-Clear", "dark": "Glass-Dark"}   # Settings > Icon style
 
 
-def dock_icon_size():
+def appearance():
     try:
         with open(APPEARANCE) as f:
-            return SIZES.get(json.load(f).get("dock_size"), SIZES["medium"])
-    except (OSError, ValueError, AttributeError):
-        return SIZES["medium"]
+            a = json.load(f)
+        return a if isinstance(a, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def dock_icon_size(a=None):
+    """Settings > Appearance > Dock size: a pixel size from the slider, or an older preset name."""
+    a = appearance() if a is None else a
+    v = a.get("dock_icon")
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return int(max(24, min(80, v)))
+    return SIZES.get(a.get("dock_size"), SIZES["medium"])
+
+
+def dock_hover_animation(a=None):
+    """Settings > Appearance > Animate icons on hover (on by default)."""
+    a = appearance() if a is None else a
+    return bool(a.get("dock_hover", True))
+
+
+HOVER_SCALE = 1.12    # how much the icon under the pointer grows, when hover animation is on
+
+
+def hover_lift(size):
+    """px the icon under the pointer rises."""
+    return round(size * 0.14)
 
 
 def dock_glass():
@@ -71,12 +101,15 @@ window.glass-dock { background: transparent; }
   padding: 3px 4px 0 4px;
   margin: 0 1px;
   border-radius: 16px;
-  transition: transform 220ms cubic-bezier(0.2, 0.9, 0.25, 1.25), background 160ms ease;
 }
-.dock-item:hover {
-  transform: translateY(-7px) scale(1.18);
-}
-.dock-item:active { transform: translateY(-3px) scale(1.06); }
+/* The icon under the pointer lifts (sizes set in Dock.apply_size). Only the image moves, with a
+   transform, so the bar's layout and width never change and nothing beside it shifts. */
+.dock-item image { transform-origin: 50% 100%; }
+.dock.animate .dock-item image { transition: transform 150ms cubic-bezier(0.2, 0.9, 0.3, 1); }
+.dock-item:active image { opacity: 0.8; }
+.dock { transition: transform 240ms cubic-bezier(0.2, 0.9, 0.3, 1); }
+/* tucked below the screen edge while the dock is hidden */
+.dock.tucked { transform: translateY(140px); }
 .dot {
   min-width: 5px; min-height: 5px; border-radius: 3px;
   margin-top: 3px; margin-bottom: 2px;
@@ -96,6 +129,10 @@ popover.dock-menu button { background: none; border: none; box-shadow: none; pad
 popover.dock-menu button:hover { background: alpha(#ffffff, 0.14); }
 popover.dock-menu label.title { font-weight: 700; padding: 4px 14px 6px 14px; color: alpha(#ffffff, 0.85); }
 tooltip { background: alpha(#1c1d2a, 0.92); border-radius: 10px; border: 1px solid alpha(#ffffff, 0.18); }
+popover.dock-label > contents {
+  background: alpha(#1c1d2a, 0.88); border: 1px solid alpha(#ffffff, 0.18); border-radius: 9px;
+  padding: 3px 10px; color: #ffffff; font-weight: 500; box-shadow: none;
+}
 """
 
 
@@ -193,7 +230,8 @@ def listen_events(callback):
                 f = s.makefile("r", errors="replace")
                 for line in f:
                     ev = line.split(">>", 1)[0]
-                    if ev in ("openwindow", "closewindow", "activewindowv2", "movewindowv2", "windowtitlev2"):
+                    if ev in ("openwindow", "closewindow", "activewindowv2", "movewindowv2", "windowtitlev2",
+                              "fullscreen", "workspacev2"):
                         GLib.idle_add(once)
             except Exception:
                 pass
@@ -293,17 +331,62 @@ class DockItem(Gtk.Button):
         else:
             icon.set_from_icon_name("application-x-executable")
         icon.set_pixel_size(ICON_SIZE)
+        self.icon = icon
         self.dot = Gtk.Box()
         self.dot.add_css_class("dot")
         self.dot.set_halign(Gtk.Align.CENTER)
         box.append(icon)
         box.append(self.dot)
         self.set_child(box)
-        self.set_tooltip_text(name or (info.get_display_name() if info else app_id))
+        self.name = name or (info.get_display_name() if info else app_id)
+        self.label_pop = None
+        self.label_id = None
+        hover = Gtk.EventControllerMotion()
+        hover.connect("enter", lambda *_: self.show_label())
+        hover.connect("leave", lambda *_: self.hide_label())
+        self.add_controller(hover)
         self.connect("clicked", self.on_click)
         rc = Gtk.GestureClick(button=3)
         rc.connect("pressed", self.on_right_click)
         self.add_controller(rc)
+
+    def show_label(self):
+        """The app's name, floating above the icon like on a Mac. (A tooltip would sit on top
+        of the lifted icon: GTK places it against the button.)"""
+        if self.label_id:
+            GLib.source_remove(self.label_id)
+
+        def pop():
+            self.label_id = None
+            if self.dock.menus:
+                return False
+            if not self.label_pop:
+                self.label_pop = Gtk.Popover()
+                self.label_pop.add_css_class("dock-label")
+                self.label_pop.set_has_arrow(False)
+                self.label_pop.set_autohide(False)
+                self.label_pop.set_can_target(False)
+                self.label_pop.set_position(Gtk.PositionType.TOP)
+                self.label_pop.set_child(Gtk.Label(label=self.name))
+                self.label_pop.set_parent(self)
+            grow = hover_lift(ICON_SIZE) + round(ICON_SIZE * (HOVER_SCALE - 1))
+            rise = (grow if self.dock.hover_anim else 0) + 6
+            r = Gdk.Rectangle()
+            r.x, r.y, r.width, r.height = 0, -rise, max(1, self.get_width()), 1
+            self.label_pop.set_pointing_to(r)
+            self.label_pop.popup()
+            return False
+        self.label_id = GLib.timeout_add(80, pop)
+
+    def hide_label(self):
+        if self.label_id:
+            GLib.source_remove(self.label_id)
+            self.label_id = None
+        if self.label_pop:
+            self.label_pop.popdown()
+
+    def get_tooltip_text(self):   # the app's name (the right-click menu's title uses it)
+        return self.name
 
     def set_windows(self, wins, active):
         self.windows = wins
@@ -360,6 +443,8 @@ class DockItem(Gtk.Button):
             item("Remove from Dock" if pinned else "Keep in Dock", lambda: self.dock.toggle_pin(self.app_id))
         pop.set_child(box)
         pop.set_parent(self)
+        self.dock.menus += 1           # the dock stays up while one of its menus is open
+        pop.connect("closed", lambda *_: self.dock.menu_closed())
         pop.popup()
 
 
@@ -382,31 +467,80 @@ class Dock(Gtk.ApplicationWindow):
         self.size_css = Gtk.CssProvider()
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), self.size_css,
                                                   Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+        self.hover_anim = None
+        self.size_key = None         # the CSS last loaded, so an unrelated settings change costs nothing
+        # whether the pointer is anywhere on the dock (for hiding)
+        motion = Gtk.EventControllerMotion()
+        motion.connect("enter", self.on_enter)
+        motion.connect("leave", self.on_leave)
+        self.add_controller(motion)
+        # hiding: while a window is full size, or always with "Hide the dock automatically"
+        self.autohide = bool(appearance().get("dock_autohide", False))
+        self.fullscreen = False
+        self.hidden_mode = False     # out of the way until the pointer touches the bottom edge
+        self.revealed = True
+        self.hovering = False
+        self.menus = 0
+        self.hide_id = None
+        self.monitors = []
+        self.monitors_at = 0.0
+        self.icon_theme = None
         self.apply_size()
         # Settings saves appearance.json; pick up a new dock size straight away
         self.appearance_mon = Gio.File.new_for_path(APPEARANCE).monitor_file(Gio.FileMonitorFlags.NONE, None)
-        self.appearance_mon.connect("changed", lambda *_a: self.apply_size(rebuild=dock_icon_size() != ICON_SIZE))
+        self.appearance_mon.connect("changed", lambda *_a: self.apply_size(rebuild=False))
         self.refresh()
         listen_events(self.refresh)
         GLib.timeout_add_seconds(3, self.refresh)  # safety net
+        GLib.timeout_add(90, self.watch_edge)
+        if self.autohide:
+            GLib.idle_add(lambda: (self.update_hidden_mode(), False)[1])
         Gio.AppInfoMonitor.get().connect("changed", lambda *_: self.rebuild())
 
     def apply_size(self, rebuild=True):
         global ICON_SIZE
-        ICON_SIZE = dock_icon_size()
+        a = appearance()
+        old_size = ICON_SIZE
+        ICON_SIZE = dock_icon_size(a)
+        hover = dock_hover_animation(a)
+        if hover != self.hover_anim:
+            self.hover_anim = hover
+            (self.box.add_css_class if hover else self.box.remove_css_class)("animate")
+        theme = THEMES.get(a.get("icon_style"), THEMES["dark"])
+        if theme != self.icon_theme:
+            self.icon_theme = theme
+            Gtk.Settings.get_default().set_property("gtk-icon-theme-name", theme)
+            rebuild = True
+        rebuild = rebuild or ICON_SIZE != old_size
+        autohide = bool(a.get("dock_autohide", False))
+        if autohide != self.autohide:
+            self.autohide = autohide
+            GLib.idle_add(lambda: (self.update_hidden_mode(), False)[1])
         g = dock_glass()
         top, bottom = 0.15 + 0.07 * g, 0.08 + 0.08 * g   # clear glass barely tints; frosted is milkier
-        css = (f".dock {{ border-radius: {round((ICON_SIZE + 22) * 0.38)}px; "
-               f"background-image: linear-gradient(180deg, alpha(#ffffff, {top:.3f}), alpha(#ffffff, {bottom:.3f})); }}")
-        if hasattr(self.size_css, "load_from_string"):
-            self.size_css.load_from_string(css)
-        else:
-            self.size_css.load_from_data(css.encode())
+        # room above the bar for a lifted icon: fixed for a given size, so the surface never resizes
+        # while the pointer moves (that resizing is what used to shove the dock off centre)
+        lift = hover_lift(ICON_SIZE)
+        headroom = max(22, lift + round(ICON_SIZE * (HOVER_SCALE - 1)) + 8)
+        css = (f".dock {{ border-radius: {round((ICON_SIZE + 22) * 0.38)}px; margin-top: {headroom}px; "
+               f"background-image: linear-gradient(180deg, alpha(#ffffff, {top:.3f}), alpha(#ffffff, {bottom:.3f})); }}"
+               f".dock.tucked {{ transform: translateY({ICON_SIZE + 60}px); }}"
+               f".dock.animate .dock-item:hover image {{ transform: translateY(-{lift}px) scale({HOVER_SCALE}); }}")
+        if css != self.size_key:
+            self.size_key = css
+            if hasattr(self.size_css, "load_from_string"):
+                self.size_css.load_from_string(css)
+            else:
+                self.size_css.load_from_data(css.encode())
         # the bar is the icon plus 22 px of padding and dots, with 10 px under it; windows that
         # are maximized or tiled stop above it
-        Layer.set_exclusive_zone(self, ICON_SIZE + 28)
+        self.set_exclusive()
         if rebuild and self.items:
             self.rebuild()
+
+    def set_exclusive(self):
+        # while the dock hides itself, windows may use the whole screen
+        Layer.set_exclusive_zone(self, 0 if self.autohide else ICON_SIZE + 28)
 
     def toggle_pin(self, app_id):
         if app_id in self.pins:
@@ -425,6 +559,11 @@ class Dock(Gtk.ApplicationWindow):
     def refresh(self):
         cl = clients()
         active = active_address()
+        aw = next((c for c in cl if c.get("address") == active), None)
+        fs = bool(aw) and aw.get("fullscreen") == 2 and not is_minimized(aw)
+        if fs != self.fullscreen:
+            self.fullscreen = fs
+            self.update_hidden_mode()
         running = {}   # app_id -> (info, [windows])
         for c in cl:
             cls = c.get("class") or c.get("initialClass") or ""
@@ -471,7 +610,7 @@ class Dock(Gtk.ApplicationWindow):
             sep.add_css_class("dock-sep")
             self.box.append(sep)
             apps = DockItem(self, "glass:apps", None,
-                            gicon=Gio.ThemedIcon.new_from_names(["view-app-grid", "applications-all",
+                            gicon=Gio.ThemedIcon.new_from_names(["glass-apps", "view-app-grid", "applications-all",
                                                                  "view-grid", "applications-other"]),
                             name="All Apps (Super)",
                             action=lambda: subprocess.Popen(["sh", "-c", "glass-sound launcher; fuzzel"]))
@@ -480,6 +619,104 @@ class Dock(Gtk.ApplicationWindow):
 
         for k, it in self.items.items():
             it.set_windows(running.get(k, [None, []])[1], active)
+        return True
+
+
+    # ------------------------------------------------------------------------- pointer
+    def on_enter(self, _c, _x, _y):
+        self.hovering = True
+        self.cancel_hide()
+
+    def on_leave(self, _c):
+        self.hovering = False
+        if self.hidden_mode:
+            self.schedule_hide()
+
+    # ------------------------------------------------------------------------- hiding
+    def update_hidden_mode(self):
+        hidden = self.autohide or self.fullscreen
+        self.set_exclusive()
+        if hidden == self.hidden_mode:
+            return
+        self.hidden_mode = hidden
+        if hidden:
+            if not self.hovering:
+                self.hide_now()
+        else:
+            self.cancel_hide()
+            self.show_now()
+
+    def show_now(self):
+        self.revealed = True
+        # above a full-size window while it's called up; with the top bar otherwise
+        Layer.set_layer(self, Layer.Layer.OVERLAY if self.fullscreen else Layer.Layer.TOP)
+        if self.get_visible():
+            self.box.remove_css_class("tucked")
+            return
+        self.box.add_css_class("tucked")
+        self.set_visible(True)
+        # map it tucked below the edge, then let it slide up
+        GLib.timeout_add(30, lambda: (self.box.remove_css_class("tucked"), False)[1])
+
+    def hide_now(self):
+        self.hide_id = None
+        if not self.hidden_mode or self.hovering or self.menus:
+            return False
+        self.revealed = False
+        self.box.add_css_class("tucked")
+
+        def unmap():
+            # unmapped once it's slid away, so the space it leaves takes no clicks
+            if not self.revealed:
+                self.set_visible(False)
+            return False
+        GLib.timeout_add(260, unmap)
+        return False
+
+    def schedule_hide(self, delay=450):
+        self.cancel_hide()
+        self.hide_id = GLib.timeout_add(delay, self.hide_now)
+
+    def cancel_hide(self):
+        if self.hide_id:
+            GLib.source_remove(self.hide_id)
+            self.hide_id = None
+
+    def menu_closed(self):
+        self.menus = max(0, self.menus - 1)
+        if self.hidden_mode and not self.hovering:
+            self.schedule_hide()
+
+    def watch_edge(self):
+        """While hidden, call the dock up when the pointer reaches the bottom edge of the screen."""
+        if not self.hidden_mode:
+            return True
+        try:
+            pos = json.loads(hypr_request("j/cursorpos") or "{}")
+            x, y = float(pos["x"]), float(pos["y"])
+        except (ValueError, KeyError, TypeError):
+            return True
+        if not self.monitors or time.monotonic() - self.monitors_at > 5:
+            try:
+                self.monitors = json.loads(hypr_request("j/monitors") or "[]")
+            except ValueError:
+                self.monitors = []
+            self.monitors_at = time.monotonic()
+        for m in self.monitors:
+            sc = m.get("scale") or 1
+            w, h = m.get("width", 0) / sc, m.get("height", 0) / sc
+            if (m.get("transform") or 0) % 2 == 1:
+                w, h = h, w
+            mx, my = m.get("x", 0), m.get("y", 0)
+            if mx <= x < mx + w and my <= y < my + h:
+                if y >= my + h - 3:
+                    self.cancel_hide()
+                    if not self.revealed:
+                        self.show_now()
+                elif (self.revealed and not self.hovering and not self.menus and not self.hide_id
+                      and y < my + h - (ICON_SIZE + 40)):
+                    self.schedule_hide(250)
+                break
         return True
 
 
