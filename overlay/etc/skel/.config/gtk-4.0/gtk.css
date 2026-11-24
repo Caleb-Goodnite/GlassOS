@@ -1,5 +1,5 @@
 /* GlassOS "Prism" glass for other GTK 4 apps.
-   GlassOS's own windows (.glass) and the dock set their own glass, and the Tint setting in
+   GlassOS's own windows (.glass) and the dock set their own glass, and the Glass slider in
    Settings > Appearance controls them, so this rule leaves them alone. */
 window.background:not(.glass):not(.glass-dock) { background-color: alpha(#181924, 0.82); }
 headerbar { background: alpha(#ffffff, 0.05); box-shadow: inset 0 -1px alpha(#ffffff, 0.07); }

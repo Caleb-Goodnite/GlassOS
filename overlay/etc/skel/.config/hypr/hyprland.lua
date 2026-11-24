@@ -81,9 +81,11 @@ hl.config({
         gaps_out = 14,
         border_size = 1,
         col = {
-            -- a thin specular rim, brighter on the top-left like light hitting glass
-            active_border   = { colors = { "rgba(ffffff70)", "rgba(ffffff18)" }, angle = 135 },
-            inactive_border = { colors = { "rgba(ffffff30)", "rgba(ffffff0a)" }, angle = 135 },
+            -- a thin specular rim, as on macOS Golden Gate's glass: brightest on the top-left where
+            -- the light hits, dim along the sides, and catching light again at the bottom-right
+            -- where it passes back out through the glass
+            active_border   = { colors = { "rgba(ffffff8c)", "rgba(ffffff1c)", "rgba(ffffff14)", "rgba(ffffff4a)" }, angle = 135 },
+            inactive_border = { colors = { "rgba(ffffff3c)", "rgba(ffffff0c)", "rgba(ffffff0a)", "rgba(ffffff22)" }, angle = 135 },
         },
         resize_on_border = true,
         extend_border_grab_area = 12,
@@ -107,15 +109,18 @@ hl.config({
             color_inactive = 0x33000000,
         },
 
+        -- Settings > Appearance > Glass slides all of these together, from Clear (a light blur that
+        -- keeps shapes and colour behind) to Frosted (a heavy, grainy blur). The defaults here are
+        -- the slider's default position; glassui.glass_look() has the whole range.
         blur = {
             enabled   = true,
-            size      = M.light and 4 or pick(S.frost_size, 5),     -- Settings > Appearance > Frost
+            size      = M.light and 4 or pick(S.frost_size, 5),
             passes    = M.light and 1 or pick(S.frost_passes, 2),
-            noise     = 0.012,
+            noise     = pick(S.frost_noise, 0.012),
             contrast  = 1.0,
-            brightness = 0.66,    -- darkens what shows through, so white text stays readable over white pages
-            vibrancy  = 0.5,      -- keeps the wallpaper's colour in the glass
-            vibrancy_darkness = 0.25,
+            brightness = pick(S.frost_brightness, 0.67),  -- darkens what shows through, so white text stays readable over white pages
+            vibrancy  = pick(S.frost_vibrancy, 0.59),     -- keeps the wallpaper's colour in the glass
+            vibrancy_darkness = 0.4,                       -- ...in its dark parts too, not just the bright ones
             popups    = true,
             new_optimizations = true,
             xray      = M.light or false,

@@ -4,7 +4,7 @@
 Everything it changes is a plain file you can read:
   ~/.config/glassos/settings.json     what you picked (input, displays, frost, idle timers)
   ~/.config/hypr/glass-settings.lua   the same, written out for the desktop (Hyprland)
-  ~/.config/glassos/appearance.json   glass tint/accent for GlassOS apps
+  ~/.config/glassos/appearance.json   glass level, accent and dock size for GlassOS apps
   ~/.config/hypr/hypridle.conf        dim / lock / screen-off timers
 System-wide things (Wi-Fi, Bluetooth, time zone) go through NetworkManager, BlueZ and systemd.
 
@@ -103,7 +103,7 @@ def save_state(changes, reload_monitors=False):
     with open(STATE + ".tmp", "w") as f:
         json.dump(st, f, indent=2)
     os.replace(STATE + ".tmp", STATE)
-    keys = ["frost_size", "frost_passes", "kb_layout", "kb_variant", "sensitivity",
+    keys = ["frost_size", "frost_passes", "frost_vibrancy", "frost_brightness", "frost_noise", "kb_layout", "kb_variant", "sensitivity",
             "mouse_natural_scroll", "touchpad_natural_scroll", "tap_to_click"]
     lines = ["-- Written by GlassOS Settings. It's rewritten whenever you change a setting,",
              "-- so put your own changes in custom.lua instead.", "return {"]
@@ -669,26 +669,17 @@ class AppearancePage(Page):
         self.body.append(wc)
 
         a = ui.appearance()
-        st = load_state()
-        gc = ui.card("Glass", "Every window is a pane of frosted glass. Stack windows and the view through them "
+        gc = ui.card("Glass", "Every window is a pane of glass. Stack windows and the view through them "
                      "gets frostier and darker, layer by layer.")
-        self.frost = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 1, 10, 1)
-        self.frost.set_draw_value(False)
-        self.frost.set_size_request(260, -1)
-        self.frost.set_value(st.get("frost", 4))
-        for v, txt in ((1, "Clear"), (10, "Frosted")):
-            self.frost.add_mark(v, Gtk.PositionType.BOTTOM, txt)
-        self.frost.connect("value-changed", self.on_frost)
-        gc.append(ui.setting_row("Frost", "How strongly each pane blurs what's behind it.", self.frost))
-        self.tint = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 10, 90, 1)
-        self.tint.set_draw_value(False)
-        self.tint.set_size_request(260, -1)
-        self.tint.set_value(a["tint"] * 100)
-        for v, txt in ((10, "Light"), (90, "Dark")):
-            self.tint.add_mark(v, Gtk.PositionType.BOTTOM, txt)
-        self.tint.connect("value-changed", self.on_tint)
-        gc.append(ui.setting_row("Tint", "How dark each GlassOS window's glass is. Applies to apps you open next.",
-                                 self.tint))
+        self.glass = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
+        self.glass.set_draw_value(False)
+        self.glass.set_size_request(260, -1)
+        self.glass.set_value(a["glass"])
+        for v, txt in ((0, "Clear"), (ui.DEFAULTS["glass"], None), (100, "Frosted")):
+            self.glass.add_mark(v, Gtk.PositionType.BOTTOM, txt)
+        self.glass.connect("value-changed", self.on_glass)
+        gc.append(ui.setting_row("Glass", "Clear lets the colours and shapes behind show through. Frosted blurs "
+                                 "them away and is easiest to read on.", self.glass))
         sw = hbox(8)
         self.swatches = []
         for col in self.ACCENTS:
@@ -717,7 +708,10 @@ class AppearancePage(Page):
                                   lambda i: ui.save_appearance(dock_size=sizes[i]))
         gc.append(ui.setting_row("Dock size", None, self.dock_size))
         self.body.append(gc)
-        self._frost_id = None
+        self._glass_id = None
+        if "frost_vibrancy" not in load_state():
+            # set up before the Glass slider (separate Frost and Tint): make the blur match the slider
+            self.sync_blur(a["glass"])
 
     @staticmethod
     def effects_note():
@@ -800,23 +794,32 @@ class AppearancePage(Page):
 
         dlg.open(self.win, None, done)
 
-    def on_frost(self, s):
-        if self._frost_id:
-            GLib.source_remove(self._frost_id)
+    BLUR_KEYS = ("frost_size", "frost_passes", "frost_vibrancy", "frost_brightness", "frost_noise")
+
+    @classmethod
+    def sync_blur(cls, level):
+        """Write Hyprland's blur for a Glass level (it reloads its config when this is saved)."""
+        look = ui.glass_look(level)
+        save_state({k: look[k] for k in cls.BLUR_KEYS})
+        return look
+
+    def on_glass(self, s):
+        if self._glass_id:
+            GLib.source_remove(self._glass_id)
 
         def apply():
             v = int(s.get_value())
-            save_state({"frost": v, "frost_size": v + 1, "frost_passes": 2 if v <= 6 else 3})
-            self._frost_id = None
+            look = self.sync_blur(v)                           # Hyprland's blur
+            ui.save_appearance(glass=v, tint=look["tint"])     # GlassOS apps and the dock
+            ui.reload_css()                                    # and this window, straight away
+            self._glass_id = None
             return False
 
-        self._frost_id = GLib.timeout_add(250, apply)
-
-    def on_tint(self, s):
-        ui.save_appearance(tint=round(s.get_value() / 100, 2))
+        self._glass_id = GLib.timeout_add(250, apply)
 
     def on_accent(self, col):
         ui.save_appearance(accent=col)
+        ui.reload_css()
         for c, b in self.swatches:
             (b.add_css_class if c == col else b.remove_css_class)("current")
 
