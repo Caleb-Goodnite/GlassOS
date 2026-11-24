@@ -1,6 +1,11 @@
 #!/bin/sh
 # Lock the screen (Super+L), with your pack's lock/unlock sounds.
 pidof hyprlock >/dev/null 2>&1 && exit 0
+# The lock screen shows your current wallpaper, blurred
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
+WALL="$(sed -n 's/^wallpaper *= *//p' "$CONF/glassos/desktop.conf" 2>/dev/null)"
+[ -f "$WALL" ] || WALL=/usr/share/glassos/wallpapers/prism.jpg
+mkdir -p "$HOME/.cache/glassos" && ln -sfn "$WALL" "$HOME/.cache/glassos/lock-background"
 glass-sound lock
 hyprlock "$@"
 glass-sound unlock

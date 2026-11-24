@@ -1,0 +1,13 @@
+#!/bin/sh
+# Run by hypridle after you've been away for a while (Settings > Power & Lock): puts the computer
+# to sleep, but only on battery. Plugged in, or on a computer without a battery, it stays awake.
+bat=0
+for ps in /sys/class/power_supply/*; do
+  type="$(cat "$ps/type" 2>/dev/null)"
+  if [ "$type" = Battery ]; then
+    [ "$(cat "$ps/scope" 2>/dev/null)" = Device ] || bat=1   # "Device" = a wireless mouse's battery
+  elif [ "$(cat "$ps/online" 2>/dev/null)" = 1 ]; then
+    exit 0                                                   # charger (mains or USB-C) connected
+  fi
+done
+[ "$bat" = 1 ] && exec systemctl suspend

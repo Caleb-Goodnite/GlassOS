@@ -64,6 +64,9 @@ firmware-sof-signed [amd64]      # audio on modern Intel laptops
 intel-microcode [amd64]     # CPU security and stability fixes from Intel
 amd64-microcode [amd64]     # CPU security and stability fixes from AMD
 
+## Battery
+tlp                         # battery life: on battery, sets the processor, Wi-Fi, sound, USB and PCIe to save power
+
 ## Networking and privacy
 network-manager             # connects to Wi-Fi and Ethernet (connectivity "phone-home" checks are off)
 wpasupplicant               # Wi-Fi security (WPA2/WPA3)
