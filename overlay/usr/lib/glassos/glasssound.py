@@ -49,7 +49,7 @@ EVENTS = {
     "window-open":           ("A window opens", [], ["window-new"]),
     "window-close":          ("A window closes", [], ["window-close"]),
     "workspace":             ("You switch desktops (workspaces)", [], []),
-    "launcher":              ("App search opens (Super+Space)", [], []),
+    "launcher":              ("App search opens (Super)", [], []),
     "screenshot":            ("A screenshot is taken", [], ["screen-capture", "camera-shutter"]),
     "volume":                ("Volume changes (plays at the new level)", [], ["audio-volume-change"]),
     "service-failed":        ("A background service crashes", ["error"], []),

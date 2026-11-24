@@ -452,7 +452,7 @@ class WelcomePage(Page):
         g = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True,
                         min_children_per_line=1, max_children_per_line=2, column_spacing=24, row_spacing=8)
         shortcuts = [
-            ("Super + Space", "Search and open apps"), ("Super + Return", "Terminal"),
+            ("Super", "Search and open apps"), ("Super + Return", "Terminal"),
             ("Super + E", "Files"), ("Super + B", "Web browser"),
             ("Super + U", "Glass Lens"), ("Super + Q", "Close window"),
             ("Super + F", "Fullscreen"), ("Super + T", "Tile / float window"),

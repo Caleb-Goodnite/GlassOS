@@ -395,7 +395,7 @@ class Dock(Gtk.ApplicationWindow):
             apps = DockItem(self, "glass:apps", None,
                             gicon=Gio.ThemedIcon.new_from_names(["view-app-grid", "applications-all",
                                                                  "view-grid", "applications-other"]),
-                            name="All Apps (Super+Space)",
+                            name="All Apps (Super)",
                             action=lambda: subprocess.Popen(["sh", "-c", "glass-sound launcher; fuzzel"]))
             self.box.append(apps)
             self.items["glass:apps"] = apps

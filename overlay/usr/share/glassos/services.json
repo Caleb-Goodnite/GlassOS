@@ -66,7 +66,7 @@
   "dirmngr": "Fetches encryption key information (only runs if something needs it).",
   "keyboxd": "Stores encryption keys (only runs if something needs it).",
   "glass-dock": "The GlassOS dock at the bottom of the screen.",
-  "glass-launcher": "App search (Super + Space).",
+  "glass-launcher": "App search (tap Super).",
   "glass-topbar": "The top bar: menu, window title, clock, battery, Wi-Fi and volume.",
   "glass-wallpaper": "Draws your wallpaper.",
   "glass-notifications": "Shows notification bubbles in the top-right corner.",

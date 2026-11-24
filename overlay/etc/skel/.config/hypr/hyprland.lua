@@ -252,7 +252,10 @@ end
 -- Keyboard shortcuts  (Super = the Windows/Command key)
 local mod = "SUPER"
 
-hl.bind(mod .. " + SPACE",  hl.dsp.exec_cmd(launcher),          { description = "Search apps" })
+-- Tap Super on its own to search apps. It fires when Super is let go, and only if no other key
+-- was pressed while it was held, so Super+E, Super+drag and the rest still work as before.
+hl.bind(mod .. " + SUPER_L", hl.dsp.exec_cmd(launcher), { release = true, description = "Search apps" })
+hl.bind(mod .. " + SUPER_R", hl.dsp.exec_cmd(launcher), { release = true, description = "Search apps" })
 hl.bind(mod .. " + RETURN", hl.dsp.exec_cmd(terminal),          { description = "Terminal" })
 hl.bind(mod .. " + E",      hl.dsp.exec_cmd(files),             { description = "Files" })
 hl.bind(mod .. " + B",      hl.dsp.exec_cmd(browser),           { description = "Web browser" })
