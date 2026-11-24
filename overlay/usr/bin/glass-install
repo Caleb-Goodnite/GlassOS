@@ -198,7 +198,10 @@ rm -f "$T/etc/sudoers.d/glassos-live" "$T/usr/share/applications/glass-install.d
     echo "command = \"glass-session\""
     echo "user = \"$USERNAME\""
   fi
-} > "$T/etc/greetd/config.toml"
+} > "$T/etc/greetd/config.toml.new"
+# replace the live USB's file (its automatic login is for the "glass" account, deleted above)
+mv -f "$T/etc/greetd/config.toml.new" "$T/etc/greetd/config.toml"
+grep -q 'written by the installer' "$T/etc/greetd/config.toml" || die "couldn't write the login screen settings."
 
 step "Removing the live-USB parts"
 inc apt-get purge -y -q live-boot live-boot-initramfs-tools >/dev/null 2>&1 || true
