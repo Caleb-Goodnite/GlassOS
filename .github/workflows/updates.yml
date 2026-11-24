@@ -1,0 +1,71 @@
+# GlassOS updates: every merge to main becomes an update on the "dev" channel, and every release
+# tag (v1.1.0) an update on the "stable" channel. Installed computers get them from
+# Settings > Software Update. The packages are published, signed, to GitHub Pages:
+#   https://caleb-goodnite.github.io/GlassOS/apt
+#
+# One-time setup (see docs/UPDATES.md):
+#   - repository secret APT_SIGNING_KEY: the private GPG key that signs updates
+#   - Settings > Pages: deploy from the gh-pages branch, / (root)
+name: Publish updates
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths-ignore: ["**.md", "docs/**", "scripts/run-qemu*", "scripts/vm*.py"]
+  workflow_dispatch:
+
+concurrency:
+  group: publish-updates
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      - name: Tools
+        run: |
+          apt-get update -q
+          apt-get install -y -q --no-install-recommends git ca-certificates rsync dpkg-dev apt-utils gnupg xz-utils
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the version number counts commits; config-sync needs every past /etc/skel file
+
+      - name: Build glassos-desktop (amd64 + arm64)
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          ver="$(scripts/version.sh)"
+          echo "VERSION=$ver" >> "$GITHUB_ENV"
+          # "What's new" in Settings: the latest changes, newest first
+          git log --no-merges --format=%s -n 15 > notes.txt
+          for arch in amd64 arm64; do scripts/make-deb.sh "$arch" "$ver" debs notes.txt; done
+          ls -lh debs
+
+      - name: Publish to GitHub Pages (gh-pages branch)
+        env:
+          SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          TOKEN: ${{ github.token }}
+        run: |
+          [ -n "$SIGNING_KEY" ] || { echo "::error::Add the APT_SIGNING_KEY repository secret first (docs/UPDATES.md)"; exit 1; }
+          printf '%s\n' "$SIGNING_KEY" | gpg --batch --import
+          suite=dev
+          case "$GITHUB_REF" in refs/tags/v*) suite=stable ;; esac
+          url="https://x-access-token:$TOKEN@github.com/$GITHUB_REPOSITORY.git"
+          if ! git clone -q --depth 1 --branch gh-pages "$url" site; then
+            mkdir site && git -C site init -q -b gh-pages
+          fi
+          scripts/publish-repo.sh site/apt "$suite" debs/*.deb
+          cd site
+          touch .nojekyll
+          # one commit, replaced each time: old packages don't pile up in the branch history
+          git checkout -q --orphan publish
+          git add -A
+          git -c user.name="GlassOS updates" -c user.email="actions@github.com" \
+            commit -q -m "GlassOS $VERSION ($suite)"
+          git push -q --force "$url" publish:gh-pages
+          echo "Published GlassOS $VERSION to the $suite channel" >> "$GITHUB_STEP_SUMMARY"

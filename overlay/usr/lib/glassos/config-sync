@@ -1,0 +1,112 @@
+#!/usr/bin/python3
+"""Bring your desktop settings files up to date after a GlassOS update.
+
+Your top bar, Hyprland, notification and other settings live in your home folder (copied from
+/etc/skel when your account was made), so an update to /etc/skel alone wouldn't reach you.
+At each login this compares them:
+
+  - a file you never changed is replaced with the new version;
+  - a file you did change gets the update merged in (like `diff3 -m`), as long as your change
+    and GlassOS's don't touch the same lines; otherwise it's left alone and noted in
+    ~/.local/state/glassos/config-sync.log;
+  - a file new in this update is added.
+
+The version you last received is kept in ~/.local/state/glassos/skel-base/ so the next merge
+knows what you changed. "Never changed" means it matches a version GlassOS shipped
+(/usr/share/glassos/skel-known.sha256).
+"""
+import hashlib
+import os
+import shutil
+import subprocess
+import sys
+import time
+
+SKEL = os.environ.get("GLASSOS_SKEL", "/etc/skel")          # (overridable for testing)
+KNOWN = os.environ.get("GLASSOS_SKEL_KNOWN", "/usr/share/glassos/skel-known.sha256")
+# dpkg's leftovers when it updates a configuration file, never settings of yours
+LEFTOVERS = (".dpkg-old", ".dpkg-new", ".dpkg-dist", ".dpkg-bak", ".dpkg-tmp", ".ucf-old", ".ucf-new", ".ucf-dist")
+HOME = os.path.expanduser("~")
+STATE = os.path.join(os.environ.get("XDG_STATE_HOME", os.path.join(HOME, ".local", "state")), "glassos")
+BASE = os.path.join(STATE, "skel-base")
+LOG = os.path.join(STATE, "config-sync.log")
+
+
+def digest(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def known_hashes():
+    known = set()
+    try:
+        with open(KNOWN) as f:
+            for line in f:
+                h, _, rel = line.rstrip("\n").partition("  ")
+                if rel:
+                    known.add((rel, h))
+    except OSError:
+        pass
+    return known
+
+
+def log(msg):
+    os.makedirs(STATE, exist_ok=True)
+    with open(LOG, "a") as f:
+        f.write(time.strftime("%Y-%m-%d %H:%M ") + msg + "\n")
+
+
+def install(src, dst):
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    tmp = dst + ".glassos-new"
+    shutil.copy2(src, tmp)
+    os.replace(tmp, dst)
+
+
+def main():
+    known = known_hashes()
+    for root, _dirs, files in os.walk(SKEL):
+        for name in files:
+            if name.endswith(LEFTOVERS):
+                continue
+            new = os.path.join(root, name)
+            rel = os.path.relpath(new, SKEL)
+            mine = os.path.join(HOME, rel)
+            base = os.path.join(BASE, rel)
+            try:
+                new_h = digest(new)
+                if not os.path.exists(mine):
+                    if os.path.exists(base):
+                        continue  # you deleted it on purpose after receiving it
+                    install(new, mine)
+                    log(f"added {rel}")
+                elif digest(mine) == new_h:
+                    pass
+                elif (rel, digest(mine)) in known or (os.path.exists(base) and digest(mine) == digest(base)):
+                    install(new, mine)  # you never edited it
+                    log(f"updated {rel}")
+                elif os.path.exists(base) and digest(base) != new_h:
+                    # you edited it and GlassOS changed it: merge both changes
+                    r = subprocess.run(["diff3", "-m", mine, base, new], capture_output=True)
+                    if r.returncode == 0:
+                        tmp = mine + ".glassos-new"
+                        with open(tmp, "wb") as f:
+                            f.write(r.stdout)
+                        shutil.copymode(mine, tmp)
+                        os.replace(tmp, mine)
+                        log(f"merged the update into your edited {rel}")
+                    else:
+                        log(f"kept your {rel}: the update changes the same lines you edited "
+                            f"(GlassOS's version is in {new})")
+                        continue  # keep the old base, so a later update can try again
+                elif not os.path.exists(base):
+                    log(f"kept your {rel}: it was edited before GlassOS started tracking updates")
+                install(new, base)
+            except OSError as e:
+                log(f"couldn't check {rel}: {e}")
+
+
+if __name__ == "__main__":
+    if os.geteuid() == 0:
+        sys.exit("config-sync runs as you, at login (not as root).")
+    main()

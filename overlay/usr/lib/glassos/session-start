@@ -12,6 +12,10 @@ desk() {  # desk <unit-name> <command...>
 dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP \
   XDG_SESSION_TYPE HYPRLAND_INSTANCE_SIGNATURE DISPLAY XCURSOR_THEME XCURSOR_SIZE 2>/dev/null
 
+# After a GlassOS update: bring your top bar, Hyprland and other settings files up to date
+# (your own edits are kept; see /usr/lib/glassos/config-sync)
+/usr/lib/glassos/config-sync 2>/dev/null
+
 CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
 WALL="$(sed -n 's/^wallpaper *= *//p' "$CONF/glassos/desktop.conf" 2>/dev/null)"
 [ -f "$WALL" ] || WALL=/usr/share/glassos/wallpapers/prism.jpg

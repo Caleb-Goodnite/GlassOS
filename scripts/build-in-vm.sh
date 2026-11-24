@@ -176,41 +176,22 @@ stage_assets() {
 
 stage_configure() {
   [ -d "$GEN" ] || stage_assets
-  log "Copying GlassOS files into the system"
-  rsync -rlpt "$SRC/overlay/" "$ROOT/"
-  chmod 0440 "$ROOT/etc/sudoers.d/"* 2>/dev/null || true
-
-  install -d "$ROOT/usr/share/glassos" "$ROOT/usr/share/glassos/wallpapers" \
-             "$ROOT/usr/share/glassos/soundpacks" "$ROOT/usr/share/glassos/grub-theme" \
-             "$ROOT/usr/share/plymouth/themes/glassos"
-  install -m644 "$SRC/config/packages.list" "$ROOT/usr/share/glassos/packages.list"
-  install -m644 "$SRC/soundpacks/README.md" "$ROOT/usr/share/glassos/soundpacks/README.md"
-  cp "$GEN"/wallpapers/* "$ROOT/usr/share/glassos/wallpapers/"
-  rsync -rlt --delete "$GEN/grub-theme/" "$ROOT/usr/share/glassos/grub-theme/"
-  rsync -rlt "$SRC/grub/theme.txt" "$ROOT/usr/share/glassos/grub-theme/theme.txt"
-  rsync -rlt --delete "$GEN/plymouth/" "$ROOT/usr/share/plymouth/themes/glassos/"
-  cp "$SRC"/plymouth/glassos.plymouth "$SRC"/plymouth/glassos.script "$ROOT/usr/share/plymouth/themes/glassos/"
-  for size in 16 24 32 48 64 128 256 512; do
-    for icon in glassos glass-lens glass-sounds glass-settings glass-store; do
-      [ -f "$GEN/icons/$icon-$size.png" ] || continue
-      install -D -m644 "$GEN/icons/$icon-$size.png" \
-        "$ROOT/usr/share/icons/hicolor/${size}x${size}/apps/$icon.png"
-    done
-  done
-  install -m644 "$GEN/icons/glassos-symbolic.png" "$ROOT/usr/share/glassos/logo-symbolic.png"
-  install -m644 "$GEN/icons/glassos-256.png" "$ROOT/usr/share/glassos/logo.png"
-  for pack in "$SRC"/soundpacks/*/; do
-    rsync -rlt --delete "$pack" "$ROOT/usr/share/glassos/soundpacks/$(basename "$pack")/"
-  done
-
-  cat > "$ROOT/usr/share/glassos/build-info" <<EOF
-GLASSOS_VERSION=$GLASSOS_VERSION
-GLASSOS_CODENAME=$GLASSOS_CODENAME
-ARCH=$ARCH
-BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-DEBIAN_SUITE=$DEBIAN_SUITE
-DEFAULT_SOUNDPACK=$DEFAULT_SOUNDPACK
-EOF
+  log "Packaging GlassOS (glassos-desktop) and installing it"
+  # GlassOS's files go in as a Debian package, so the installed system can update them later
+  # (Settings > Software Update) exactly the way this build put them there.
+  local ver deb
+  ver="$("$SRC/scripts/version.sh")"
+  deb="$("$SRC/scripts/make-deb.sh" "$ARCH" "$ver" "$WORK/deb" | tail -n1)"
+  cp "$deb" "$ROOT/tmp/glassos-desktop.deb"
+  mount_chroot
+  in_chroot GLASSOS_BUILD=1 apt-get install -y --allow-downgrades \
+    -o Dpkg::Options::=--force-confnew /tmp/glassos-desktop.deb
+  umount_chroot
+  rm -f "$ROOT/tmp/glassos-desktop.deb" "$WORK"/deb/*.deb
+  # live-USB-only files (the installer removes them; they're not in the package)
+  install -m0440 "$SRC/overlay/etc/sudoers.d/glassos-live" "$ROOT/etc/sudoers.d/glassos-live"
+  install -m0644 "$SRC/overlay/usr/share/applications/glass-install.desktop" \
+    "$ROOT/usr/share/applications/glass-install.desktop"
 
   log "Configuring the system (inside chroot)"
   mount_chroot

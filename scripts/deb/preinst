@@ -1,0 +1,10 @@
+#!/bin/sh
+# glassos-desktop: GlassOS ships its own versions of a few files that belong to other Debian
+# packages. dpkg-divert moves Debian's copy aside (to *.debian), so updating those packages
+# can't overwrite GlassOS's.
+set -e
+for f in /etc/nftables.conf /etc/greetd/config.toml; do
+  if ! dpkg-divert --list "$f" | grep -q glassos-desktop; then
+    dpkg-divert --package glassos-desktop --divert "$f.debian" --rename --add "$f" >/dev/null
+  fi
+done

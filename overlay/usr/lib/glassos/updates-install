@@ -1,0 +1,10 @@
+#!/bin/sh
+# Settings > Software Update > Update Now: install every waiting update (GlassOS's and Debian's,
+# security fixes and new kernels included). Run as root through pkexec.
+# Progress goes to stdout as apt status lines (pmstatus:/dlstatus:), which Settings turns into
+# its progress bar. Settings files you edited yourself are kept (--force-confold).
+export DEBIAN_FRONTEND=noninteractive
+dpkg --configure -a >/dev/null 2>&1   # finish an update a power cut interrupted
+exec apt-get full-upgrade -y -q \
+  -o APT::Status-Fd=1 -o Dpkg::Use-Pty=0 \
+  -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold
