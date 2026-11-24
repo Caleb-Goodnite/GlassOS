@@ -48,10 +48,9 @@ export XDG_SESSION_TYPE=wayland
 export XDG_SESSION_DESKTOP=Hyprland
 export XDG_CURRENT_DESKTOP=Hyprland
 
-# Software rendering fallback when there is no usable GPU driver (e.g. plain VMs)
-if [ "$ACCEL" = no ]; then
-  export LIBGL_ALWAYS_SOFTWARE=1
-fi
+# No LIBGL_ALWAYS_SOFTWARE here: Mesa already draws in software when there's no 3D driver,
+# and forcing it makes Hyprland quit at start ("Not allowed to force software rendering when
+# API explicitly selects a hardware device"). Without acceleration only the effects get lighter.
 
 # The desktop's own messages go to the system journal (journalctl --user -t hyprland),
 # not across the screen while it starts.

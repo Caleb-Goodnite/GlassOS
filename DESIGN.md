@@ -45,6 +45,9 @@ Visual language: layered frosted glass over a colourful wallpaper. Dials: **ENER
 | Pill buttons, rounded cards (16px), rounded fields (12px) | Radius sets the hierarchy: things you press are pills, containers are cards. |
 | Dim text at 85% white, never lower | Keeps secondary text above WCAG AA contrast over bright parts of the wallpaper. |
 | Ribbon wallpapers ("Prism", "Tide", "Ember") | Glass only reads as glass when colour and edges sit behind it to soften. |
+| No outer drop shadow on the top bar or dock | Hyprland blurs and darkens everything above 5% alpha behind them, so a soft shadow becomes a hard dark box. The blur alone lifts them off the wallpaper. |
+| Click to focus | Like a Mac: moving the pointer across windows doesn't change which one you're typing in. Scrolling still reaches whatever is under the pointer. |
+| App names in the top bar come from each app's launcher | App Store apps read "Tux Paint", not "org.tuxpaint.Tuxpaint". |
 
 ## Writing
 

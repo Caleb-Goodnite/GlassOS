@@ -6,7 +6,11 @@
 f="$(ls /var/lib/glassos/sounds/boot.* 2>/dev/null | head -n1)"
 if [ -z "$f" ]; then
   pack="$(sed -n 's/^DEFAULT_SOUNDPACK=//p' /usr/share/glassos/build-info 2>/dev/null)"
-  f="$(ls /usr/share/glassos/soundpacks/${pack:-glassos-default}/boot.* 2>/dev/null | head -n1)"
+  dir="/usr/share/glassos/soundpacks/${pack:-glassos-default}"
+  # a pack can name its boot file in pack.ini ([files] boot = Startup.wav)
+  name="$(sed -n '/^\[files\]/,/^\[/ s/^ *boot *= *//p' "$dir/pack.ini" 2>/dev/null | head -n1)"
+  case "$name" in */*|"") f="" ;; *) [ -f "$dir/$name" ] && f="$dir/$name" ;; esac
+  [ -n "$f" ] || f="$(ls "$dir"/boot.* 2>/dev/null | head -n1)"
 fi
 [ -n "$f" ] || exit 0
 
@@ -21,6 +25,8 @@ done
 sleep 0.3
 
 echo "GlassOS: playing boot sound $f"
-AUDIODRIVER=alsa timeout 10 play -q -v "$vol" "$f" 2>/dev/null || \
-  { case "$f" in *.wav) timeout 10 aplay -q "$f" ;; esac; }
+# "sysdefault" is the sound card itself. ALSA's "default" goes through PipeWire, which isn't
+# running this early, so it would fail with "Host is down".
+AUDIODRIVER=alsa AUDIODEV=sysdefault timeout 10 play -q -v "$vol" "$f" 2>/dev/null || \
+  { case "$f" in *.wav) timeout 10 aplay -q -D sysdefault "$f" ;; esac; }
 exit 0

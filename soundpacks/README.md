@@ -43,11 +43,19 @@ description = Warm analog blips
 # fill in any event this pack doesn't have from another pack (by folder name)
 inherits = glassos-default
 
+[files]
+# optional: keep your own file names and say which event each one is for
+boot = Startup.wav
+warning = Application-Warning-Notification.wav
+
 [volume]
 # optional per-event loudness, 0.0 - 1.0 (multiplied by the system sound volume)
 boot = 0.9
 window-open = 0.4
 ```
+
+A `[files]` entry wins over a file named after the event. File names are looked up inside the
+pack folder only.
 
 ## Events
 

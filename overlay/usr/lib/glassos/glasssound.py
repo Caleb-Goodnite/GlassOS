@@ -3,7 +3,8 @@
 A sound pack is just a folder:
 
     my-pack/
-      pack.ini            (optional) name, author, description, inherits, per-event volume
+      pack.ini            (optional) name, author, description, inherits, per-event volume,
+                          and [files] to give an event a file with any name (boot = Startup.wav)
       boot.wav            one file per event; .wav .ogg .oga .flac .mp3 all work
       notification.ogg
       ...
@@ -117,6 +118,14 @@ class Pack:
         self.author = p.get("author", "")
         self.description = p.get("description", "")
         self.inherits = p.get("inherits", "").strip() or None
+        # [files] event = file name inside the pack, for sounds that keep their own names
+        self.files = {}
+        if cp.has_section("files"):
+            root = os.path.realpath(path)
+            for ev, name in cp["files"].items():
+                f = os.path.realpath(os.path.join(path, name.strip()))
+                if ev in EVENTS and f.startswith(root + os.sep) and os.path.splitext(f)[1].lower() in EXTS:
+                    self.files[ev] = f
         self.volumes = {}
         if cp.has_section("volume"):
             for k, v in cp["volume"].items():
@@ -126,6 +135,8 @@ class Pack:
                     pass
 
     def file_for(self, event):
+        if event in self.files and os.path.isfile(self.files[event]):
+            return self.files[event]
         for ext in EXTS:
             f = os.path.join(self.path, event + ext)
             if os.path.isfile(f):
@@ -137,10 +148,11 @@ class Pack:
 
     def unknown_files(self):
         known = set(EVENTS)
+        mapped = {os.path.basename(f) for f in self.files.values()}
         out = []
         for f in sorted(os.listdir(self.path)):
             stem, ext = os.path.splitext(f)
-            if ext.lower() in EXTS and stem not in known:
+            if ext.lower() in EXTS and stem not in known and f not in mapped:
                 out.append(f)
         return out
 

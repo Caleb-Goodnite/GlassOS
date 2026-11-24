@@ -38,7 +38,7 @@ if [ -d /sys/firmware/efi ]; then FIRMWARE=UEFI; else FIRMWARE=BIOS; fi
 [ "$ARCH" = arm64 ] && [ "$FIRMWARE" = BIOS ] && die "ARM computers need UEFI firmware to boot GlassOS."
 say "This computer starts in ${B}$FIRMWARE${R} mode."
 if [ "$FIRMWARE" = UEFI ] && [ "$(od -An -t u1 -j4 -N1 /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null | tr -d ' ')" = 1 ]; then
-  say "${RED}Secure Boot is on.${R} GlassOS 0.1 isn't signed for Secure Boot yet, so after installing,"
+  say "${RED}Secure Boot is on.${R} GlassOS isn't signed for Secure Boot yet, so after installing,"
   say "turn Secure Boot off in your firmware settings or the computer won't start GlassOS."
 fi
 

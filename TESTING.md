@@ -45,7 +45,7 @@ to judge speed.
 
 ## On a real PC
 
-1. Write `out/GlassOS-0.1-amd64.iso` to a USB stick (4 GB or larger) with balenaEtcher.
+1. Write `out/GlassOS-1.0.0-amd64.iso` to a USB stick (4 GB or larger) with balenaEtcher.
 2. Turn off Secure Boot in the PC's firmware settings.
 3. Start the PC from the stick and pick **Try GlassOS**. Try mode runs from the stick and doesn't
    touch the PC's disks, so it's the safe way to check Wi-Fi, sound and graphics.
@@ -83,11 +83,14 @@ Screenshots: press Print (or Super+Shift+S for an area). They go to Pictures > S
 - [ ] The welcome page opens on the first login only
 
 ### Desktop
-- [ ] Top bar: logo menu, window title, network, volume, clock. No CPU or RAM numbers.
+- [ ] Top bar: logo menu, app name, network, volume, clock. No CPU or RAM numbers, and no dark
+  boxes around the pills.
+- [ ] Pointing at a window doesn't switch to it; clicking does (scrolling works without clicking)
 - [ ] Play a video in the browser: a white speaker icon appears top-right; pointing at it names the app
 - [ ] Dock: every icon opens its app; a dot shows under open apps
 - [ ] Super+Space searches apps; typing part of a name and pressing Enter opens it
-- [ ] Drag a window's title bar to move it; drag an edge or corner to resize it
+- [ ] Drag the title bar of a GlassOS app (Settings, Lens, Store, Calculator, Browser) to move it;
+      drag any window's edge or corner to resize it
 - [ ] Super+drag moves a window from anywhere; Super+right-drag resizes it
 - [ ] Every window fits on the screen when it opens, including Glass Lens and Settings
 - [ ] Super+1 to Super+9 switch desktops
@@ -101,9 +104,10 @@ Screenshots: press Print (or Super+Shift+S for an area). They go to Pictures > S
 - [ ] **Settings > Appearance > Effects**: Lighter turns off the shadows and lightens the blur at once
 - [ ] **Settings > Privacy & Security**: "Right now" lists what's using the speakers, with Quit app;
   switching the microphone off mutes it (the volume menu shows it muted)
-- [ ] **App Store**: Popular loads with icons; search finds apps; an app's page shows screenshots,
-  "What it can reach" and the download size
-- [ ] **App Store**: Install shows progress, then Open starts the app; it also appears in the app search
+- [ ] **App Store**: Popular loads with icons, two or three to a row; search and every category load
+  their own apps; an app's page shows screenshots, "What it can reach" and the download size
+- [ ] **App Store**: Install shows progress, then Open starts the app; it also appears in the app search,
+  the top bar shows its real name (e.g. "Tux Paint") and the dock shows its icon
 - [ ] **App Store > Installed**: lists it; switching "The internet" off on its page stops it going online;
   Remove takes it away
 - [ ] **GlassOS Help** (logo menu): opens in Glass Browser, and every topic link jumps to its section
@@ -118,6 +122,8 @@ Screenshots: press Print (or Super+Shift+S for an area). They go to Pictures > S
 - [ ] About lists every added package with the reason it's there
 
 ### Sound packs (your synths)
+- [ ] The image starts with **My Sounds**: your Startup.wav plays at boot, and your warning sound
+  plays for warnings (everything else comes from the GlassOS pack)
 - [ ] Sounds page: each event plays when you click it
 - [ ] **Create starter pack**, put your files in it, **Import a pack folder…**, then choose it
 - [ ] Your sounds play for login, notifications, errors, plugging in the shared folder, lock, shut down
@@ -148,3 +154,8 @@ Screenshots: press Print (or Super+Shift+S for an area). They go to Pictures > S
 - In the Mac virtual machine there's no graphics acceleration, so effects are lighter and some
   Flathub apps aren't offered (they're only made for Intel and AMD processors).
 - Installing next to Windows on the same disk isn't supported yet.
+- Only GlassOS's own apps move by dragging their title bar. Other apps (Files, Terminal, App
+  Store apps) move with Super + drag: the window manager, Hyprland, ignores the "move me"
+  request apps send, and Files and Terminal have no title bar to drag.
+- In a virtual machine, a window that opens right under a still pointer may ignore the first
+  click until the pointer moves a little.

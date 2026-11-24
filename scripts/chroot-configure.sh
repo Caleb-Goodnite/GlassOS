@@ -60,8 +60,8 @@ passwd -l root >/dev/null
 for d in Desktop Documents Downloads Music Pictures Videos "Music/Sound Packs" Pictures/Screenshots; do
   install -d -o "$LIVE_USER" -g "$LIVE_USER" "/home/$LIVE_USER/$d"
 done
-# the default pack, copied where it's easy to find and use as a starting point
-cp -r "/usr/share/glassos/soundpacks/$DEFAULT_SOUNDPACK" "/home/$LIVE_USER/Music/Sound Packs/GlassOS Default (copy)"
+# the GlassOS pack, copied where it's easy to find and use as a starting point
+cp -r /usr/share/glassos/soundpacks/glassos-default "/home/$LIVE_USER/Music/Sound Packs/GlassOS Default (copy)"
 chown -R "$LIVE_USER:$LIVE_USER" "/home/$LIVE_USER"
 
 say "admin rules (sounds, Glass Lens, camera switch)"
