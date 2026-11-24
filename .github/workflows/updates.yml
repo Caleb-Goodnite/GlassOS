@@ -60,6 +60,8 @@ jobs:
             mkdir site && git -C site init -q -b gh-pages
           fi
           scripts/publish-repo.sh site/apt "$suite" debs/*.deb
+          # one-line setup for computers installed before updates existed (docs/UPDATES.md)
+          cp scripts/updates-setup.sh site/setup.sh
           cd site
           touch .nojekyll
           # one commit, replaced each time: old packages don't pile up in the branch history
