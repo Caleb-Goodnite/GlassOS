@@ -1,6 +1,9 @@
 """Wi-Fi, Bluetooth and sound helpers shared by Glass Settings and the top bar's drop-downs
 (glass-panel). They call the same tools you could run yourself: nmcli, bluetoothctl, wpctl.
 """
+import glob
+import json
+import os
 import re
 import subprocess
 
@@ -156,9 +159,78 @@ def get_volume(target):
 
 
 # --------------------------------------------------------------------------- Display
+# Screens with a backlight (laptops) are dimmed with brightnessctl. Screens without one (virtual
+# machines, most external monitors) are dimmed in software: a Hyprland screen shader darkens the
+# picture. The level is kept in ~/.config/glassos/brightness so it survives a log out, and
+# ~/.config/hypr/glass-dim.lua tells hyprland.lua which shader to load at start-up.
+SOFT_MIN = 20   # software dimming never goes darker than this, so the screen can't go black
+
+
+def _config_home():
+    return os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+
+
+def _soft_file():
+    return os.path.join(_config_home(), "glassos", "brightness")
+
+
+def has_backlight():
+    code, out, _ = run(["brightnessctl", "-m", "-c", "backlight"], 5)
+    return code == 0 and bool(re.search(r",(\d+)%,", out))
+
+
 def brightness():
-    """Screen brightness 0-100, or None when the screen has no backlight control (most external
-    monitors, and virtual machines)."""
+    """Screen brightness 0-100: the backlight's level, or the software dimming level when the
+    screen has no backlight (always a number, so the slider is always there)."""
     code, out, _ = run(["brightnessctl", "-m", "-c", "backlight"], 5)
     m = re.search(r",(\d+)%,", out)
-    return int(m.group(1)) if code == 0 and m else None
+    if code == 0 and m:
+        return int(m.group(1))
+    try:
+        with open(_soft_file()) as f:
+            return max(SOFT_MIN, min(100, int(f.read().strip())))
+    except (OSError, ValueError):
+        return 100
+
+
+SHADER = """#version 300 es
+precision highp float;
+in vec2 v_texcoord;
+uniform sampler2D tex;
+out vec4 fragColor;
+void main() {
+    vec4 c = texture(tex, v_texcoord);
+    fragColor = vec4(c.rgb * %.3f, c.a);
+}
+"""
+
+
+def set_brightness(pct):
+    """Set the screen brightness (1-100)."""
+    pct = max(1, min(100, int(pct)))
+    if has_backlight():
+        run(["brightnessctl", "-q", "set", f"{pct}%"], 5)
+        return
+    pct = max(SOFT_MIN, pct)
+    glassos = os.path.join(_config_home(), "glassos")
+    hypr = os.path.join(_config_home(), "hypr")
+    os.makedirs(glassos, exist_ok=True)
+    os.makedirs(hypr, exist_ok=True)
+    with open(_soft_file(), "w") as f:
+        f.write(f"{pct}\n")
+    # Hyprland only re-reads a shader when its path changes, so each level gets its own file
+    for old in glob.glob(os.path.join(glassos, "dim-*.frag")):
+        try:
+            os.remove(old)
+        except OSError:
+            pass
+    shader = ""
+    if pct < 100:
+        shader = os.path.join(glassos, f"dim-{pct}.frag")
+        with open(shader, "w") as f:
+            f.write(SHADER % (pct / 100))
+    with open(os.path.join(hypr, "glass-dim.lua"), "w") as f:
+        f.write("-- Written by GlassOS (the brightness slider): software dimming for this screen\n")
+        f.write(f"return {{ shader = {json.dumps(shader) if shader else 'nil'} }}\n")
+    lua = 'hl.config({ decoration = { screen_shader = %s } })' % json.dumps(shader)
+    run(["hyprctl", "eval", lua], 5)

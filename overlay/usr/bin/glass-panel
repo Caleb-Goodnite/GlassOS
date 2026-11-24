@@ -1,5 +1,5 @@
 #!/bin/sh
-# glass-panel wifi|bluetooth|sound|control
+# glass-panel wifi|bluetooth|sound|control|window
 # The drop-downs under the top bar's Wi-Fi, volume and Control Centre icons.
 # gtk4-layer-shell must be loaded before GTK/Wayland in Python.
 for lib in /usr/lib/*/libgtk4-layer-shell.so.0 /usr/lib/libgtk4-layer-shell.so.0; do

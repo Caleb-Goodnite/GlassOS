@@ -23,6 +23,7 @@ import time
 sys.path.insert(0, "/usr/lib/glassos")
 sys.path.insert(0, "/usr/lib/glassos/lens")
 import glassui as ui  # noqa: E402
+import glasshw  # noqa: E402
 from glasshw import get_volume, nm_connect_new, nm_split, wpctl_devices  # noqa: E402
 from glassui import hbox, label, vbox  # noqa: E402
 import gi  # noqa: E402
@@ -499,7 +500,9 @@ class DisplaysPage(Page):
         self.bright = ui.card("Brightness")
         self.bscale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 5, 100, 1)
         self.bscale.set_draw_value(False)
-        self.bscale.connect("value-changed", lambda s: spawn(["brightnessctl", "-q", "set", f"{int(s.get_value())}%"]))
+        self.bquiet = False
+        self.bwant = None
+        self.bscale.connect("value-changed", self.on_bright)
         self.bright.append(self.bscale)
         self.body.append(self.bright)
 
@@ -552,15 +555,31 @@ class DisplaysPage(Page):
             row.append(ui.button("Apply", apply, "pill accent"))
             c.append(row)
             self.box.append(c)
-        code, out, _ = run(["brightnessctl", "-m", "-c", "backlight"])
-        if code == 0 and out.strip():
-            self.bright.set_visible(True)
-            try:
-                self.bscale.set_value(int(out.split(",")[3].rstrip("%")))
-            except (IndexError, ValueError):
-                pass
-        else:
-            self.bright.set_visible(False)
+        # always shown: a screen without a backlight (a VM, most external monitors) is dimmed in
+        # software instead (glasshw.set_brightness)
+        self.bright.set_visible(True)
+        self.bscale.set_range(5 if glasshw.has_backlight() else glasshw.SOFT_MIN, 100)
+        self.bquiet = True
+        self.bscale.set_value(glasshw.brightness())
+        self.bquiet = False
+
+    def on_bright(self, s):
+        """Applied off the UI thread; while dragging, only the latest level is set."""
+        if self.bquiet:
+            return
+        busy = self.bwant is not None
+        self.bwant = int(s.get_value())
+        if busy:
+            return
+
+        def work():
+            while True:
+                v = self.bwant
+                glasshw.set_brightness(v)
+                if self.bwant == v:
+                    self.bwant = None
+                    return
+        threading.Thread(target=work, daemon=True).start()
 
     def reset(self, name):
         mons_state = load_state().get("monitors", {})

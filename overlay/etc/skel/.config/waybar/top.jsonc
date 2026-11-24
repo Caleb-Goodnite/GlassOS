@@ -26,7 +26,10 @@
     "restart-interval": 5,
     "escape": true,
     "max-length": 32,
-    "tooltip": false
+    "tooltip": false,
+    // click the app's name for Close, Minimize, Full Size and Center: every window can be closed
+    // from here, even one without a title bar
+    "on-click": "glass-panel window"
   },
   "hyprland/workspaces": {
     "format": "{icon}",
@@ -41,11 +44,13 @@
     "on-click": "glass-launch glass-settings --page privacy"
   },
   "tray": { "icon-size": 16, "spacing": 8 },
+  // Wi-Fi: always the Wi-Fi symbol, like a Mac (dimmed while offline; the tooltip says "Wired"
+  // on a cable). Click for the Wi-Fi drop-down, right-click for Network settings.
   "network": {
     "format-wifi": "",
-    "format-ethernet": "",
-    "format-linked": "",
-    "format-disconnected": "",
+    "format-ethernet": "",
+    "format-linked": "",
+    "format-disconnected": "",
     "tooltip-format-wifi": "{essid} ({signalStrength}%)\n{ipaddr}",
     "tooltip-format-ethernet": "Wired: {ifname}\n{ipaddr}",
     "tooltip-format-disconnected": "Not connected",

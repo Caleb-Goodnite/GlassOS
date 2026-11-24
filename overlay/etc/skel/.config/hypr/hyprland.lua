@@ -42,6 +42,15 @@ local launcher    = "pkill -x fuzzel || (glass-sound launcher; fuzzel)"
 hl.monitor({ output = "", mode = "preferred", position = "auto", scale = "auto" })
 for _, m in ipairs(S.monitors or {}) do hl.monitor(m) end
 
+-- Brightness for screens without a backlight (virtual machines, most external monitors): the
+-- brightness slider dims the picture instead, with a screen shader that glasshw.py writes
+-- (~/.config/hypr/glass-dim.lua names it). Full brightness turns the shader off.
+local D = optional("glass-dim")
+if type(D) == "table" and D.shader then
+    local f = io.open(D.shader, "r")
+    if f then f:close(); hl.config({ decoration = { screen_shader = D.shader } }) end
+end
+
 -------------------------------------------------------------------------------
 -- Session start: everything GlassOS runs in your session is in this one script.
 hl.on("hyprland.start", function()
@@ -357,8 +366,10 @@ end)
 --   "full"     green: full size (covers the top bar and dock) and back
 --   "zoom"     a double-click on the title bar: fill the space between the top bar and the dock,
 --              and back, like double-clicking a title bar on a Mac
-function glass_window(action)
-    local w = hl.get_active_window()
+--   "center"   move it to the middle of the screen
+-- An optional second argument names a window by address (the top bar's window menu uses it).
+function glass_window(action, address)
+    local w = address and hl.get_window("address:" .. address) or hl.get_active_window()
     if not w then return end
     local sel = "address:" .. w.address
     if action == "close" then
@@ -377,6 +388,19 @@ function glass_window(action)
     elseif action == "zoom" then
         full_size[w.address] = nil
         set_fullscreen(w.address, w.fullscreen == 0 and 1 or 0, 0)
+    elseif action == "center" then
+        if not w.floating then hl.dispatch(hl.dsp.window.float({ action = "set", window = sel })) end
+        if w.fullscreen ~= 0 then full_size[w.address] = nil; set_fullscreen(w.address, 0, 0) end
+        local ww, wh = vec(w.size)
+        if w.monitor and ww then
+            local left, top, right, bottom = work_area(w.monitor, true)
+            local nw, nh = math.min(ww, right - left), math.min(wh, bottom - top)
+            if nw ~= ww or nh ~= wh then
+                hl.dispatch(hl.dsp.window.resize({ x = math.floor(nw), y = math.floor(nh), exact = true, window = sel }))
+            end
+            hl.dispatch(hl.dsp.window.move({ x = math.floor(left + (right - left - nw) / 2),
+                                             y = math.floor(top + (bottom - top - nh) / 2), window = sel }))
+        end
     end
 end
 
