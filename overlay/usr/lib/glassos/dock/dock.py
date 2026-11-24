@@ -24,7 +24,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 gi.require_version("Gtk4LayerShell", "1.0")
-from gi.repository import Gdk, Gio, GLib, Graphene, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 from gi.repository import Gtk4LayerShell as Layer  # noqa: E402
 
 CONF = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "glassos", "dock.conf")
@@ -115,7 +115,7 @@ window.glass-dock { background: transparent; }
 .dot.running { background: alpha(#ffffff, 0.9); box-shadow: 0 0 4px alpha(#ffffff, 0.6); }
 .dot.focused { background: #ffffff; min-width: 12px; }
 .dot.running.minimized { background: alpha(#ffffff, 0.4); box-shadow: none; }
-.dock-sep { min-width: 1px; background: alpha(#ffffff, 0.25); margin: 10px 7px 12px 7px; }
+.dock-sep { min-width: 1px; background: alpha(#ffffff, 0.25); margin: 10px 7px 12px 7px; transition: transform 110ms ease-out; }
 popover.dock-menu > contents {
   background: alpha(#1d1e2b, 0.92);
   border: 1px solid alpha(#ffffff, 0.2);
@@ -126,6 +126,10 @@ popover.dock-menu button { background: none; border: none; box-shadow: none; pad
 popover.dock-menu button:hover { background: alpha(#ffffff, 0.14); }
 popover.dock-menu label.title { font-weight: 700; padding: 4px 14px 6px 14px; color: alpha(#ffffff, 0.85); }
 tooltip { background: alpha(#1c1d2a, 0.92); border-radius: 10px; border: 1px solid alpha(#ffffff, 0.18); }
+popover.dock-label > contents {
+  background: alpha(#1c1d2a, 0.88); border: 1px solid alpha(#ffffff, 0.18); border-radius: 9px;
+  padding: 3px 10px; color: #ffffff; font-weight: 500; box-shadow: none;
+}
 """
 
 
@@ -331,21 +335,54 @@ class DockItem(Gtk.Button):
         box.append(icon)
         box.append(self.dot)
         self.set_child(box)
-        self.set_tooltip_text(name or (info.get_display_name() if info else app_id))
-        self.connect("query-tooltip", self.on_tooltip)
+        self.name = name or (info.get_display_name() if info else app_id)
+        self.label_pop = None
+        self.label_id = None
+        hover = Gtk.EventControllerMotion()
+        hover.connect("enter", lambda *_: self.show_label())
+        hover.connect("leave", lambda *_: self.hide_label())
+        self.add_controller(hover)
         self.connect("clicked", self.on_click)
         rc = Gtk.GestureClick(button=3)
         rc.connect("pressed", self.on_right_click)
         self.add_controller(rc)
 
-    def on_tooltip(self, _w, _x, _y, _kb, tooltip):
-        """Show the app's name above the magnified icon, not over it."""
-        tooltip.set_text(self.get_tooltip_text())
-        rise = round(ICON_SIZE * (self.dock.magnify_max - 1)) + 6
-        r = Gdk.Rectangle()
-        r.x, r.y, r.width, r.height = 0, -rise, self.get_width(), 1
-        tooltip.set_tip_area(r)
-        return True
+    def show_label(self):
+        """The app's name, floating above the magnified icon like on a Mac. (A tooltip would sit
+        on top of the icon: GTK places it against the unmagnified button.)"""
+        if self.label_id:
+            GLib.source_remove(self.label_id)
+
+        def pop():
+            self.label_id = None
+            if self.dock.menus:
+                return False
+            if not self.label_pop:
+                self.label_pop = Gtk.Popover()
+                self.label_pop.add_css_class("dock-label")
+                self.label_pop.set_has_arrow(False)
+                self.label_pop.set_autohide(False)
+                self.label_pop.set_can_target(False)
+                self.label_pop.set_position(Gtk.PositionType.TOP)
+                self.label_pop.set_child(Gtk.Label(label=self.name))
+                self.label_pop.set_parent(self)
+            rise = round(ICON_SIZE * (self.dock.magnify_max - 1)) + 6
+            r = Gdk.Rectangle()
+            r.x, r.y, r.width, r.height = 0, -rise, max(1, self.get_width()), 1
+            self.label_pop.set_pointing_to(r)
+            self.label_pop.popup()
+            return False
+        self.label_id = GLib.timeout_add(80, pop)
+
+    def hide_label(self):
+        if self.label_id:
+            GLib.source_remove(self.label_id)
+            self.label_id = None
+        if self.label_pop:
+            self.label_pop.popdown()
+
+    def get_tooltip_text(self):   # the app's name (the right-click menu's title uses it)
+        return self.name
 
     def set_windows(self, wins, active):
         self.windows = wins
@@ -434,11 +471,17 @@ class Dock(Gtk.ApplicationWindow):
         self.pointer = None          # pointer x in the bar's coordinates, while it's over the dock
         self.mag_pending = False
         self.mag_active = False
+        # whether the pointer is anywhere on the dock (for hiding)...
         motion = Gtk.EventControllerMotion()
-        motion.connect("enter", self.on_motion)
-        motion.connect("motion", self.on_motion)
+        motion.connect("enter", self.on_enter)
         motion.connect("leave", self.on_leave)
         self.add_controller(motion)
+        # ...and where it is along the bar, in the bar's own coordinates (the icons' too)
+        along = Gtk.EventControllerMotion()
+        along.connect("enter", self.on_motion)
+        along.connect("motion", self.on_motion)
+        along.connect("leave", self.on_bar_leave)
+        self.box.add_controller(along)
         # hiding: while a window is full size, or always with "Hide the dock automatically"
         self.autohide = bool(appearance().get("dock_autohide", False))
         self.fullscreen = False
@@ -584,11 +627,16 @@ class Dock(Gtk.ApplicationWindow):
 
 
     # ------------------------------------------------------------------------- magnification
-    def on_motion(self, _c, x, y):
+    def on_enter(self, _c, _x, _y):
         self.hovering = True
-        ok, pt = self.compute_point(self.box, _point(x, y))
-        self.pointer = pt.x if ok else None
         self.cancel_hide()
+
+    def on_motion(self, _c, x, _y):
+        self.pointer = x
+        self.queue_magnify()
+
+    def on_bar_leave(self, _c):
+        self.pointer = None
         self.queue_magnify()
 
     def on_leave(self, _c):
@@ -614,20 +662,24 @@ class Dock(Gtk.ApplicationWindow):
         if px is not None and items:
             # where each icon sits with no magnification: the bar lays its children out in a row,
             # and its coordinates start inside its padding, so the widening doesn't move them
-            centers, x = [], 0.0
+            # (the dividers move aside with the icons, but don't grow)
+            kids, centers, x, seps = [], [], 0.0, 0
             child = self.box.get_first_child()
             while child:
                 w = child.measure(Gtk.Orientation.HORIZONTAL, -1)[1]
-                if isinstance(child, DockItem):
-                    centers.append(x + w / 2)
+                if not isinstance(child, DockItem):
+                    child.set_name(f"ds{seps}")
+                    seps += 1
+                kids.append(child)
+                centers.append(x + w / 2)
                 x += w
                 child = child.get_next_sibling()
             slot = ICON_SIZE + 10
             reach = slot * 2.6
             scale = []
-            for c in centers:
+            for k, c in zip(kids, centers):
                 d = abs(px - c)
-                f = (1 + math.cos(math.pi * d / reach)) / 2 if d < reach else 0.0
+                f = (1 + math.cos(math.pi * d / reach)) / 2 if d < reach and isinstance(k, DockItem) else 0.0
                 scale.append(1 + (self.magnify_max - 1) * f)
             extra = [ICON_SIZE * (sc - 1) for sc in scale]
             # each icon's growth pushes the others away from it; the spot under the pointer stays put
@@ -642,9 +694,10 @@ class Dock(Gtk.ApplicationWindow):
             left = max(0.0, -(shift[0] - extra[0] / 2))
             right = max(0.0, shift[-1] + extra[-1] / 2)
             pad = max(left, right)
-            for i, (sc, dx) in enumerate(zip(scale, shift)):
-                rules.append(f"#di{i} {{ transform: translateX({dx:.1f}px); }}")
-                rules.append(f"#dim{i} {{ transform: scale({sc:.3f}); }}")
+            for k, sc, dx in zip(kids, scale, shift):
+                rules.append(f"#{k.get_name()} {{ transform: translateX({dx:.1f}px); }}")
+                if isinstance(k, DockItem):
+                    rules.append(f"#{k.icon.get_name()} {{ transform: scale({sc:.3f}); }}")
         active = bool(rules)
         if active != self.mag_active:
             self.mag_active = active
@@ -744,12 +797,6 @@ class Dock(Gtk.ApplicationWindow):
                     self.schedule_hide(250)
                 break
         return True
-
-
-def _point(x, y):
-    p = Graphene.Point()
-    p.x, p.y = x, y
-    return p
 
 
 class DockApp(Gtk.Application):
