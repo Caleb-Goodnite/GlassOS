@@ -1,0 +1,62 @@
+#!/bin/sh
+# Account changes for Settings > Users, run as root through pkexec (polkit asks for an admin's
+# password first, in a window). Passwords come on standard input, never on the command line.
+#
+#   glass-users add USER "Full Name" admin|standard     (password on stdin)
+#   glass-users password USER                           (password on stdin)
+#   glass-users remove USER                             (deletes the account and its home folder)
+#   glass-users autologin USER on|off
+set -e
+die() { echo "$*" >&2; exit 1; }
+[ "$(id -u)" = 0 ] || die "glass-users must run as root (through pkexec)"
+caller="$(id -un "${PKEXEC_UID:-0}" 2>/dev/null || echo root)"
+
+valid_name() { echo "$1" | grep -Eq '^[a-z_][a-z0-9_-]{0,31}$'; }
+is_person() {   # an account a person logs in to (not a system account)
+    uid="$(id -u "$1" 2>/dev/null)" || return 1
+    [ "$uid" -ge 1000 ] && [ "$uid" -lt 60000 ]
+}
+read_password() {
+    IFS= read -r pass || true
+    [ -n "$pass" ] || die "No password given."
+}
+
+action="$1"; user="$2"
+valid_name "$user" || die "\"$user\" can't be an account name: use lowercase letters, numbers, - and _."
+
+case "$action" in
+add)
+    full="$3"; kind="$4"
+    getent passwd "$user" >/dev/null && die "There's already an account called $user."
+    read_password
+    groups=""
+    for g in audio video render input netdev plugdev users; do
+        getent group "$g" >/dev/null && groups="${groups:+$groups,}$g"
+    done
+    [ "$kind" = admin ] && groups="$groups,sudo"
+    useradd -m -s /bin/bash -c "$full" -G "$groups" "$user"
+    printf '%s:%s\n' "$user" "$pass" | chpasswd
+    for d in Desktop Documents Downloads Music Pictures Videos "Music/Sound Packs" Pictures/Screenshots; do
+        install -d -o "$user" -g "$user" "/home/$user/$d"
+    done
+    ;;
+password)
+    is_person "$user" || die "$user isn't a person's account."
+    read_password
+    printf '%s:%s\n' "$user" "$pass" | chpasswd
+    ;;
+remove)
+    is_person "$user" || die "$user isn't a person's account."
+    [ "$user" != "$caller" ] && [ "$user" != "${SUDO_USER:-}" ] || die "You can't remove the account you're using."
+    pkill -KILL -u "$user" 2>/dev/null || true
+    userdel -r "$user" 2>/dev/null || userdel "$user"
+    ;;
+autologin)
+    state="$3"
+    is_person "$user" || die "$user isn't a person's account."
+    exec /usr/bin/glass-autologin "$state" "$user"
+    ;;
+*)
+    die "usage: glass-users add|password|remove|autologin USER ..."
+    ;;
+esac
