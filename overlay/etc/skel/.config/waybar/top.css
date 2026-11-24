@@ -46,13 +46,13 @@ label, #custom-app, #clock { text-shadow: 0 1px 2px alpha(#000000, 0.35); }
 #workspaces button.active { color: #ffffff; }
 #workspaces button:hover { background: alpha(#ffffff, 0.12); border-radius: 10px; color: #ffffff; }
 
-#custom-privacy, #tray, #network, #pulseaudio, #battery, #clock {
+#custom-privacy, #tray, #network, #pulseaudio, #battery, #clock, #custom-control {
   padding: 0 9px;
   color: alpha(#ffffff, 0.94);
 }
 #custom-privacy { font-size: 12px; }
 #custom-privacy.idle { padding: 0; margin: 0; }
-#custom-privacy:hover, #network:hover, #pulseaudio:hover {
+#custom-privacy:hover, #network:hover, #pulseaudio:hover, #custom-control:hover {
   background: alpha(#ffffff, 0.12);
   border-radius: 12px;
 }
