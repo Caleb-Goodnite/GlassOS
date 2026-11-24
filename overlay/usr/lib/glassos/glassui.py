@@ -107,9 +107,24 @@ scrolledwindow, viewport {{ background: transparent; }}
 """
 
 
+# The red/yellow/green window buttons (traffic_lights below), in macOS's colours. They match the
+# title bars Hyprland's hyprbars plugin draws on other apps' windows (hyprland.lua).
+TRAFFIC_LIGHTS_CSS = """
+.traffic-lights { margin-left: 4px; margin-right: 8px; }
+.traffic-lights button { min-width: 13px; min-height: 13px; padding: 0; border-radius: 99px; border: none;
+                         background-image: none; box-shadow: inset 0 0 0 0.5px alpha(#000, 0.25); color: alpha(#000, 0.6); }
+.traffic-lights button label { font-size: 10px; font-weight: 800; opacity: 0; text-shadow: none; }
+.traffic-lights:hover button label { opacity: 1; }
+.traffic-lights button.tl-close { background-color: #ff5f57; }
+.traffic-lights button.tl-min { background-color: #febc2e; }
+.traffic-lights button.tl-full { background-color: #28c840; }
+window.glass:backdrop .traffic-lights:not(:hover) button { background-color: alpha(#ffffff, 0.22); }
+"""
+
+
 def apply_css(extra=""):
     prov = Gtk.CssProvider()
-    css = base_css() + extra
+    css = base_css() + TRAFFIC_LIGHTS_CSS + extra
     if hasattr(prov, "load_from_string"):
         prov.load_from_string(css)
     else:
@@ -260,6 +275,47 @@ def work_areas():
     return out
 
 
+def my_window_address():
+    """Hyprland's address for this app's focused window (or any of its windows)."""
+    try:
+        act = json.loads(hypr("j/activewindow") or "{}")
+        if act.get("pid") == os.getpid():
+            return act.get("address")
+        for c in json.loads(hypr("j/clients") or "[]"):
+            if c.get("pid") == os.getpid():
+                return c.get("address")
+    except ValueError:
+        pass
+    return None
+
+
+def minimize(win):
+    """Yellow button: hide the window on the "minimized" desktop, like every other window's
+    yellow button (hyprland.lua). Clicking the app in the dock brings it back."""
+    addr = my_window_address()
+    if addr:
+        hypr(f'dispatch hl.dsp.window.move({{ workspace = "special:minimized", follow = false, window = "address:{addr}" }})')
+    else:
+        win.minimize()
+
+
+def traffic_lights(win):
+    """The Mac-style red/yellow/green buttons, drawn the same as the title bars Hyprland puts on
+    other apps: red closes, yellow minimizes, green toggles full size. Symbols show on hover."""
+    lights = hbox(8, "traffic-lights no-drag")
+    lights.set_valign(Gtk.Align.CENTER)
+    for cls, sym, tip, cb in (
+        ("tl-close", "×", "Close", win.close),
+        ("tl-min", "−", "Minimize", lambda: minimize(win)),
+        ("tl-full", "+", "Full size", lambda: win.unmaximize() if win.is_maximized() else win.maximize()),
+    ):
+        b = button(sym, cb, cls)
+        b.set_tooltip_text(tip)
+        b.set_valign(Gtk.Align.CENTER)
+        lights.append(b)
+    return lights
+
+
 _INTERACTIVE = (Gtk.Button, Gtk.Editable, Gtk.DropDown, Gtk.MenuButton, Gtk.Switch, Gtk.Scale, Gtk.CheckButton)
 
 
@@ -271,7 +327,12 @@ def drag_by_titlebar(win, header):
     of the title bar, it follows the pointer through Hyprland's control socket. Buttons, fields
     and tabs in the title bar keep working, and a double-click maximizes or restores.
     It reads the pointer position from Hyprland rather than from its own motion events, so it
-    also works with the absolute pointers virtual machines use."""
+    also works with the absolute pointers virtual machines use.
+    It also swaps GTK's own window buttons for the red/yellow/green ones, first in the header."""
+    header.set_show_title_buttons(False)
+    lights = traffic_lights(win)
+    header.pack_start(lights)
+    lights.get_parent().reorder_child_after(lights, None)   # before anything the app packed
     g = Gtk.GestureDrag(button=1)
     g.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
     st = {"timer": 0, "last_press": 0.0}

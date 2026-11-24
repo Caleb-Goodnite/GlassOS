@@ -66,6 +66,7 @@ window.glass-dock { background: transparent; }
 }
 .dot.running { background: alpha(#ffffff, 0.9); box-shadow: 0 0 4px alpha(#ffffff, 0.6); }
 .dot.focused { background: #ffffff; min-width: 12px; }
+.dot.running.minimized { background: alpha(#ffffff, 0.4); box-shadow: none; }
 .dock-sep { min-width: 1px; background: alpha(#ffffff, 0.25); margin: 10px 7px 12px 7px; }
 popover.dock-menu > contents {
   background: alpha(#1d1e2b, 0.92);
@@ -132,6 +133,26 @@ def active_address():
 def focus_window(address):
     subprocess.Popen(["hyprctl", "dispatch", f'hl.dsp.focus({{ window = "address:{address}" }})'],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+MINIMIZED = "special:minimized"   # where the yellow title-bar button puts windows (hyprland.lua)
+
+
+def is_minimized(win):
+    return (win.get("workspace") or {}).get("name") == MINIMIZED
+
+
+def restore_window(address):
+    """Bring a minimized window back onto the desktop you're looking at, and focus it."""
+    try:
+        ws = json.loads(hypr_request("j/activeworkspace") or "{}").get("id")
+    except ValueError:
+        ws = None
+    if ws is not None:
+        subprocess.run(["hyprctl", "dispatch",
+                        f'hl.dsp.window.move({{ workspace = {int(ws)}, follow = false, window = "address:{address}" }})'],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+    focus_window(address)
 
 
 def close_window(address):
@@ -270,8 +291,11 @@ class DockItem(Gtk.Button):
         self.windows = wins
         self.dot.remove_css_class("running")
         self.dot.remove_css_class("focused")
+        self.dot.remove_css_class("minimized")
         if wins:
             self.dot.add_css_class("running")
+            if all(is_minimized(w) for w in wins):
+                self.dot.add_css_class("minimized")
             if any(w.get("address") == active for w in wins):
                 self.dot.add_css_class("focused")
 
@@ -286,7 +310,10 @@ class DockItem(Gtk.Button):
             target = wins[0]
             if target.get("address") == active and len(wins) > 1:
                 target = wins[1]
-            focus_window(target["address"])
+            if is_minimized(target):
+                restore_window(target["address"])
+            else:
+                focus_window(target["address"])
         elif self.info:
             launch(self.info)
 
