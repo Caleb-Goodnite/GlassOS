@@ -453,6 +453,11 @@ class Dock(Gtk.ApplicationWindow):
         super().__init__(application=app)
         self.add_css_class("glass-dock")
         self.set_decorated(False)
+        # A resizable GTK window keeps the biggest size it has ever had, so the glass would stay wide
+        # after the bar gets narrower (an app closes, the dock shrinks). Non-resizable windows always
+        # take their content's natural size.
+        self.set_resizable(False)
+        self.fit_id = None
         Layer.init_for_window(self)
         Layer.set_namespace(self, "glass-dock")
         Layer.set_layer(self, Layer.Layer.TOP)
@@ -537,6 +542,20 @@ class Dock(Gtk.ApplicationWindow):
         self.set_exclusive()
         if rebuild and self.items:
             self.rebuild()
+        elif self.items:
+            self.fit()
+
+    def fit(self):
+        """Shrink the surface back to the bar's own width (see set_resizable in __init__)."""
+        if self.fit_id:
+            return
+
+        def go():
+            self.fit_id = None
+            self.set_default_size(1, 1)
+            self.queue_resize()
+            return False
+        self.fit_id = GLib.idle_add(go)
 
     def set_exclusive(self):
         # while the dock hides itself, windows may use the whole screen
@@ -616,6 +635,7 @@ class Dock(Gtk.ApplicationWindow):
                             action=lambda: subprocess.Popen(["sh", "-c", "glass-sound launcher; fuzzel"]))
             self.box.append(apps)
             self.items["glass:apps"] = apps
+            self.fit()
 
         for k, it in self.items.items():
             it.set_windows(running.get(k, [None, []])[1], active)
@@ -629,6 +649,7 @@ class Dock(Gtk.ApplicationWindow):
 
     def on_leave(self, _c):
         self.hovering = False
+        self.fit()
         if self.hidden_mode:
             self.schedule_hide()
 
