@@ -137,16 +137,32 @@ build_hyprbars() {
   before="$(in_chroot dpkg-query -W -f='${Package}\n' | sort)"
   in_chroot apt-get install -y -t "$DEBIAN_SUITE-backports" hyprland-dev
   in_chroot apt-get install -y cmake make g++ pkg-config git ca-certificates
-  rm -rf "$ROOT/tmp/hp"
+  # Debian's Hyprland was compiled against an older hyprutils than the hyprutils-dev now in
+  # backports, and its headers don't compile against the newer one. Swap in the headers of the
+  # hyprutils Hyprland actually runs with, and link against that same library, so the plugin
+  # matches it exactly. (Both swaps are undone when the build packages are purged below.)
+  local hu_so hu_ver
+  hu_so="$(in_chroot readelf -d /usr/bin/Hyprland | grep -o 'libhyprutils\.so\.[0-9]*' | head -n1)"
+  hu_ver="$(in_chroot dpkg-query -W -f='${Version}' "libhyprutils${hu_so##*.}")"
+  hu_ver="${hu_ver%%-*}"
+  log "Hyprland uses $hu_so (hyprutils $hu_ver)"
+  rm -rf "$ROOT/tmp/hp" "$ROOT/tmp/hu"
+  in_chroot git clone --depth 1 -b "v$hu_ver" https://github.com/hyprwm/hyprutils /tmp/hu
+  rm -rf "$ROOT/usr/include/hyprutils"
+  cp -r "$ROOT/tmp/hu/include/hyprutils" "$ROOT/usr/include/"
+  local triplet=x86_64-linux-gnu
+  [ "$ARCH" = arm64 ] && triplet=aarch64-linux-gnu
+  ln -sf "$hu_so" "$ROOT/usr/lib/$triplet/libhyprutils.so"
   in_chroot git clone --depth 1 -b "$HYPRBARS_TAG" https://github.com/hyprwm/hyprland-plugins /tmp/hp
   in_chroot cmake -S /tmp/hp/hyprbars -B /tmp/hp/build -DCMAKE_BUILD_TYPE=Release
   in_chroot cmake --build /tmp/hp/build -j"$(nproc)"
   install -Dm644 "$ROOT/tmp/hp/build/libhyprbars.so" "$ROOT$so"
-  rm -rf "$ROOT/tmp/hp"
+  rm -rf "$ROOT/tmp/hp" "$ROOT/tmp/hu"
   # remove only what this step installed (keeps ca-certificates etc. if the system already had them)
   added="$(comm -13 <(echo "$before") <(in_chroot dpkg-query -W -f='${Package}\n' | sort) | paste -sd' ' -)"
   # shellcheck disable=SC2086
   [ -n "$added" ] && in_chroot apt-get purge -y --auto-remove $added
+  rm -rf "$ROOT/usr/include/hyprutils"; rm -f "$ROOT/usr/lib/$triplet/libhyprutils.so"   # the swapped-in copies
   [ -s "$ROOT$so" ] || { echo "hyprbars plugin was not built ($so missing)" >&2; exit 1; }
 }
 
