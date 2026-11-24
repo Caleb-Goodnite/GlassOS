@@ -49,6 +49,7 @@ done
 cat > "$R/usr/share/glassos/build-info" <<EOF
 GLASSOS_VERSION=$VERSION
 GLASSOS_RELEASE=$GLASSOS_VERSION
+GLASSOS_BUILD_NUMBER=$(v="${VERSION#*:}"; echo "${v%%+*}")
 GLASSOS_CODENAME=$GLASSOS_CODENAME
 ARCH=$ARCH
 BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -105,6 +106,6 @@ mkdir -p "$R/DEBIAN"
 install -m755 "$SRC/scripts/deb/preinst" "$SRC/scripts/deb/postinst" "$SRC/scripts/deb/postrm" "$R/DEBIAN/"
 
 mkdir -p "$OUT"
-deb="$OUT/glassos-desktop_${VERSION}_${ARCH}.deb"
+deb="$OUT/glassos-desktop_${VERSION#*:}_${ARCH}.deb"   # (no "1:" in file names)
 dpkg-deb --root-owner-group -Zxz --build "$R" "$deb" >/dev/null
 echo "$deb"

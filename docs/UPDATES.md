@@ -13,7 +13,7 @@ Settings > Software Update installs two kinds of updates together, only when you
 
 1. A PR is merged into `main`.
 2. GitHub Actions (`.github/workflows/updates.yml`) builds `glassos-desktop` for amd64 and arm64
-   (`scripts/make-deb.sh`), numbered `1.0.0+git<commits>` (`scripts/version.sh`). Its description
+   (`scripts/make-deb.sh`), numbered `1:<build>+<release>` (`scripts/version.sh`), e.g. `1:142+1.5.0`: build 142 of GlassOS 1.5.0. Its description
    lists the latest changes, which Settings shows as "What's new".
 3. It signs the repository with the GlassOS key and publishes it to the `gh-pages` branch
    (`scripts/publish-repo.sh`). GitHub Pages serves it.
@@ -53,6 +53,11 @@ to people who aren't testing it.
    Settings, with no ISO needed.
 
 ## Things to know
+
+- **Build numbers decide what's newer**, not the release name, so every merge is an update even
+  if a branch bumps the release. ISOs must be built with `./build.sh` (it counts the build on the
+  Mac, where git is). Bump `GLASSOS_VERSION` through a PR to `main`, not only on a local branch,
+  or ISOs and updates disagree about the release name.
 
 - **Hyprland is held** (`apt-mark hold`) at the version the title-bar plugin (hyprbars) was
   compiled for, because a newer Hyprland would refuse the plugin. Moving Hyprland means rebuilding

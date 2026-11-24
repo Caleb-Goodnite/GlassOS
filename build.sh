@@ -24,6 +24,10 @@ case "$target" in
   *) echo "usage: $0 [all|amd64|arm64] [rootfs assets configure iso]"; exit 1 ;;
 esac
 
+# The GlassOS package's version (build number from git, which the build VM doesn't have)
+DEB_VERSION="$(scripts/version.sh)"
+echo "==> GlassOS package version $DEB_VERSION"
+
 if [ "$(uname -s)" = Darwin ]; then
   command -v limactl >/dev/null || { echo "Install Lima first:  brew install lima"; exit 1; }
   if ! limactl list -q 2>/dev/null | grep -qx "$VM"; then
@@ -34,13 +38,13 @@ if [ "$(uname -s)" = Darwin ]; then
   fi
   [ "$(limactl list "$VM" --format '{{.Status}}')" = Running ] || limactl start "$VM"
   for a in "${arches[@]}"; do
-    limactl shell "$VM" -- sudo bash /work/scripts/build-in-vm.sh "$a" "$@"
+    limactl shell "$VM" -- sudo GLASSOS_DEB_VERSION="$DEB_VERSION" bash /work/scripts/build-in-vm.sh "$a" "$@"
   done
   echo
   echo "Done. Stop the build VM with:  limactl stop $VM   (delete it with: limactl delete $VM)"
 else
   for a in "${arches[@]}"; do
-    sudo bash scripts/build-in-vm.sh "$a" "$@"
+    sudo GLASSOS_DEB_VERSION="$DEB_VERSION" bash scripts/build-in-vm.sh "$a" "$@"
   done
 fi
 ls -lh out/*.iso 2>/dev/null || true
