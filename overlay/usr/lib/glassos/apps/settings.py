@@ -1337,6 +1337,23 @@ class PrivacyPage(Page):
             pass
 
 
+# --------------------------------------------------------------------------- running helpers as root
+def as_admin(*argv):
+    """The command that runs a GlassOS helper as root: through pkexec, which shows the "type an
+    administrator's password" window. Systems set up before pkexec was part of GlassOS fall back
+    to sudo, which works without a password only on the live USB (see refused())."""
+    import shutil
+    if shutil.which("pkexec"):
+        return ["pkexec", *argv]
+    return ["sudo", "-n", *argv]
+
+
+def refused(code, output=""):
+    """True when the helper didn't run because no administrator said yes: the pkexec password
+    window was closed or the password was wrong (126/127), or sudo wanted a password."""
+    return code in (126, 127) or "a password is required" in (output or "")
+
+
 # --------------------------------------------------------------------------- Users
 USERS_HELPER = "/usr/lib/glassos/glass-users"   # runs as root through pkexec, which asks for an admin password
 
@@ -1345,13 +1362,13 @@ def users_admin(args, password=None):
     """Run the account helper as root. polkit shows a password window first. Returns an error
     message for people, or None when it worked."""
     try:
-        r = subprocess.run(["pkexec", USERS_HELPER, *args], input=(password or "") + "\n",
+        r = subprocess.run(as_admin(USERS_HELPER, *args), input=(password or "") + "\n",
                            capture_output=True, text=True, timeout=300)
     except Exception as e:
         return str(e)
     if r.returncode == 0:
         return None
-    if r.returncode in (126, 127):   # the password window was closed, or the password was wrong
+    if refused(r.returncode, r.stderr):
         return "Nothing was changed: an administrator's password is needed."
     return (r.stderr or r.stdout).strip() or "Something went wrong."
 
@@ -1623,8 +1640,8 @@ class UpdatesPage(Page):
 
         self.live = os.path.isdir("/run/live/medium")
         if self.live:
-            self.body.append(label("You're running GlassOS from the USB stick, so updates would be gone the next time "
-                                   "it starts. Install GlassOS to keep them.", "small warn", wrap=True))
+            self.body.append(label("You're running GlassOS from the USB stick: updates work, but they're gone the next "
+                                   "time it starts. Install GlassOS to keep them.", "small warn", wrap=True))
 
         self.list_card = ui.card()
         self.list_card.set_visible(False)
@@ -1652,8 +1669,8 @@ class UpdatesPage(Page):
         self.list_card.set_visible(False)
 
         def work():
-            r = subprocess.run(["pkexec", UPDATES_CHECK], capture_output=True, text=True, timeout=300)
-            if r.returncode in (126, 127):
+            r = subprocess.run(as_admin(UPDATES_CHECK), capture_output=True, text=True, timeout=300)
+            if refused(r.returncode, r.stderr):
                 return "cancelled", None
             # apt-get update says "W:"/"E:" for servers it couldn't reach; it still uses the rest
             problems = [l for l in (r.stdout + r.stderr).splitlines() if l.startswith(("E:", "Err:"))]
@@ -1671,7 +1688,7 @@ class UpdatesPage(Page):
             return
         problems, plan = res
         if problems == "cancelled":
-            self.status.set_text("")
+            self.status.set_text("Nothing was checked: an administrator's password is needed.")
             return
         self.plan = plan
         note = ""
@@ -1697,7 +1714,6 @@ class UpdatesPage(Page):
         head.append(t)
         self.go_btn = ui.button("Update Now", self.install, "pill accent")
         self.go_btn.set_valign(Gtk.Align.CENTER)
-        self.go_btn.set_sensitive(not self.live)
         head.append(self.go_btn)
         c.append(head)
         bg(lambda: download_size(plan), lambda s: self.size_lbl.set_text(
@@ -1755,7 +1771,7 @@ class UpdatesPage(Page):
         restart = any(p["name"].startswith(RESTART_FOR) for p in self.plan)
 
         def work():
-            p = subprocess.Popen(["pkexec", UPDATES_INSTALL], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            p = subprocess.Popen(as_admin(UPDATES_INSTALL), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                  text=True, bufsize=1)
             tail = []
             for line in p.stdout:
@@ -1780,7 +1796,7 @@ class UpdatesPage(Page):
                 self.go_btn.set_sensitive(True)
                 return
             code, tail = res
-            if code in (126, 127):
+            if refused(code, "\n".join(tail)):
                 self.step.set_text("Nothing was installed: an administrator's password is needed.")
                 self.bar.set_visible(False)
                 self.go_btn.set_sensitive(True)
