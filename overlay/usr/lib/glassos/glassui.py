@@ -325,7 +325,7 @@ def drag_by_titlebar(win, header):
     Apps normally ask the compositor to do this (xdg_toplevel.move), but Hyprland ignores that
     request, so a GlassOS window moves itself instead: while the button is held on an empty part
     of the title bar, it follows the pointer through Hyprland's control socket. Buttons, fields
-    and tabs in the title bar keep working, and a double-click maximizes or restores.
+    and tabs in the title bar keep working, and a double-click zooms the window or zooms it back.
     It reads the pointer position from Hyprland rather than from its own motion events, so it
     also works with the absolute pointers virtual machines use.
     It also swaps GTK's own window buttons for the red/yellow/green ones, first in the header."""
@@ -351,9 +351,12 @@ def drag_by_titlebar(win, header):
             return
         gesture.set_state(Gtk.EventSequenceState.CLAIMED)
         now = time.monotonic()
-        if now - st["last_press"] < 0.4:   # double-click: maximize / restore
+        if now - st["last_press"] < 0.4:   # double-click: zoom between the top bar and dock, or back
             st["last_press"] = 0.0
-            win.unmaximize() if win.is_maximized() else win.maximize()
+            if win.is_maximized():
+                win.unmaximize()
+            elif my_window_address():
+                hypr('eval glass_window("zoom")')   # acts on the active window: this one
             return
         st["last_press"] = now
         try:
