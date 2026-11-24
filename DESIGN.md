@@ -28,8 +28,9 @@ Visual language: layered frosted glass over a colourful wallpaper. Dials: **ENER
 
 | Decision | Reason |
 |---|---|
-| Glass tint 0.42, blur brightness 0.66, vibrancy 0.5, blur size 5, two passes | A little more see-through and colourful (owner asked for slightly glassier), while white text stays above 5:1 over a white web page (it measured 2.5:1 at tint 0.40 with full brightness). A second pane on top adds visible frost. |
-| Brighter top edge on panes, bar, dock, cards | The identity motif: light catching the top edge of a sheet of glass. |
+| One Glass slider, Clear to Frosted, instead of separate Frost and Tint | Modelled on macOS Golden Gate's Liquid Glass slider (owner asked to refine the glass after it). Clear: light blur (size 3), tint 0.28, vibrancy 0.75, so shapes and colour behind stay visible. Frosted: heavy grainy blur (size 10, three passes), a milky slate tint at 0.72. One control moves blur, tint and grain together, so the two can't be set to a combination that looks muddy. |
+| Default glass 35: tint 0.43, blur size 5, two passes, brightness 0.67, vibrancy 0.59 | The same tint and blur as before the slider (owner asked for slightly glassier earlier), so white text stays above 5:1 over a white web page. Vibrancy is higher, and now reaches the dark parts of the wallpaper too, so the glass keeps more colour. Toward Clear, a soft shadow behind text keeps it readable. |
+| Glass edges: bright top rim, fainter bottom rim, darker band just inside | Golden Gate's "darkened edge and brighter specular highlights". Light hits the top edge and comes back out at the bottom; the dark inner band separates the pane from what's behind. Window borders do the same with a gradient that is bright top-left, dim along the sides and lit again bottom-right. Used on windows, the bar, the dock, cards, buttons and switches. |
 | One accent, #6aa8ff blue (changeable in Settings) | Only on primary buttons, switches that are on, and focus rings, so the next action stands out. |
 | Purple tint on private browser windows | A state marker you can see from across the room: this window keeps no history. |
 | Category colours in Glass Lens (apps, desktop, system, kernel) | Data colours that tell the four kinds of usage apart in the rings. |

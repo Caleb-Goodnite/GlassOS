@@ -88,7 +88,7 @@ Screenshots: press Print (or Super+Shift+S for an area). They go to Pictures > S
 - [ ] Pointing at a window doesn't switch to it; clicking does (scrolling works without clicking)
 - [ ] Play a video in the browser: a white speaker icon appears top-right; pointing at it names the app
 - [ ] Dock: every icon opens its app; a dot shows under open apps
-- [ ] Super+Space searches apps; typing part of a name and pressing Enter opens it
+- [ ] Tapping Super on its own searches apps; typing part of a name and pressing Enter opens it
 - [ ] Drag the title bar of a GlassOS app (Settings, Lens, Store, Calculator, Browser) to move it;
       drag any window's edge or corner to resize it
 - [ ] Super+drag moves a window from anywhere; Super+right-drag resizes it

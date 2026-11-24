@@ -25,6 +25,7 @@ menubar, toolbar, .toolbar, statusbar { background: transparent; }
 popover, popover.background, menu, .menu, .context-menu {
   background-color: alpha(#20212e, 0.90);
   border: 1px solid @glass_rim;
+  border-top-color: alpha(#ffffff, 0.28);   /* light catching the top edge, like the rest of the glass */
   border-radius: 12px;
 }
 

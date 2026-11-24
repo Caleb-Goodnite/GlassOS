@@ -35,16 +35,34 @@ def dock_icon_size():
     except (OSError, ValueError, AttributeError):
         return SIZES["medium"]
 
+
+def dock_glass():
+    """Settings > Appearance > Glass, 0 (Clear) to 1 (Frosted): the dock's glass follows it."""
+    try:
+        with open(APPEARANCE) as f:
+            a = json.load(f)
+        if "glass" in a:
+            return max(0.0, min(1.0, float(a["glass"]) / 100))
+        return max(0.0, min(1.0, (float(a["tint"]) - 0.28) / 0.44))   # saved before the slider
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return 0.35
+
+
 CSS = b"""
 window.glass-dock { background: transparent; }
 .dock {
-  background: alpha(#ffffff, 0.12);
-  border: 1px solid alpha(#ffffff, 0.18);
-  border-top-color: alpha(#ffffff, 0.42);
+  /* a sheet of glass, as in macOS Golden Gate: light on the top edge and, fainter, on the bottom
+     edge where it passes back out, with a darker band just inside the rim. How milky the fill is
+     follows the Glass slider (apply_size). */
+  border: 1px solid alpha(#ffffff, 0.16);
+  border-top-color: alpha(#ffffff, 0.46);
+  border-bottom-color: alpha(#ffffff, 0.24);
   border-radius: 26px;
   padding: 6px 8px 3px 8px;
   margin: 22px 16px 10px 16px;
-  box-shadow: inset 0 1px 1px alpha(#ffffff, 0.16);   /* no outer shadow: it would be clipped into a box at the surface edge */
+  /* no outer shadow: it would be clipped into a box at the surface edge */
+  box-shadow: inset 0 1px 1px alpha(#ffffff, 0.20), inset 0 -1px 1px alpha(#ffffff, 0.07),
+              inset 0 0 0 1px alpha(#000000, 0.12);
 }
 .dock-item {
   background: none;
@@ -66,6 +84,7 @@ window.glass-dock { background: transparent; }
 }
 .dot.running { background: alpha(#ffffff, 0.9); box-shadow: 0 0 4px alpha(#ffffff, 0.6); }
 .dot.focused { background: #ffffff; min-width: 12px; }
+.dot.running.minimized { background: alpha(#ffffff, 0.4); box-shadow: none; }
 .dock-sep { min-width: 1px; background: alpha(#ffffff, 0.25); margin: 10px 7px 12px 7px; }
 popover.dock-menu > contents {
   background: alpha(#1d1e2b, 0.92);
@@ -132,6 +151,26 @@ def active_address():
 def focus_window(address):
     subprocess.Popen(["hyprctl", "dispatch", f'hl.dsp.focus({{ window = "address:{address}" }})'],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+MINIMIZED = "special:minimized"   # where the yellow title-bar button puts windows (hyprland.lua)
+
+
+def is_minimized(win):
+    return (win.get("workspace") or {}).get("name") == MINIMIZED
+
+
+def restore_window(address):
+    """Bring a minimized window back onto the desktop you're looking at, and focus it."""
+    try:
+        ws = json.loads(hypr_request("j/activeworkspace") or "{}").get("id")
+    except ValueError:
+        ws = None
+    if ws is not None:
+        subprocess.run(["hyprctl", "dispatch",
+                        f'hl.dsp.window.move({{ workspace = {int(ws)}, follow = false, window = "address:{address}" }})'],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+    focus_window(address)
 
 
 def close_window(address):
@@ -270,8 +309,11 @@ class DockItem(Gtk.Button):
         self.windows = wins
         self.dot.remove_css_class("running")
         self.dot.remove_css_class("focused")
+        self.dot.remove_css_class("minimized")
         if wins:
             self.dot.add_css_class("running")
+            if all(is_minimized(w) for w in wins):
+                self.dot.add_css_class("minimized")
             if any(w.get("address") == active for w in wins):
                 self.dot.add_css_class("focused")
 
@@ -286,7 +328,10 @@ class DockItem(Gtk.Button):
             target = wins[0]
             if target.get("address") == active and len(wins) > 1:
                 target = wins[1]
-            focus_window(target["address"])
+            if is_minimized(target):
+                restore_window(target["address"])
+            else:
+                focus_window(target["address"])
         elif self.info:
             launch(self.info)
 
@@ -340,16 +385,19 @@ class Dock(Gtk.ApplicationWindow):
         self.apply_size()
         # Settings saves appearance.json; pick up a new dock size straight away
         self.appearance_mon = Gio.File.new_for_path(APPEARANCE).monitor_file(Gio.FileMonitorFlags.NONE, None)
-        self.appearance_mon.connect("changed", lambda *_a: self.apply_size() if dock_icon_size() != ICON_SIZE else None)
+        self.appearance_mon.connect("changed", lambda *_a: self.apply_size(rebuild=dock_icon_size() != ICON_SIZE))
         self.refresh()
         listen_events(self.refresh)
         GLib.timeout_add_seconds(3, self.refresh)  # safety net
         Gio.AppInfoMonitor.get().connect("changed", lambda *_: self.rebuild())
 
-    def apply_size(self):
+    def apply_size(self, rebuild=True):
         global ICON_SIZE
         ICON_SIZE = dock_icon_size()
-        css = f".dock {{ border-radius: {round((ICON_SIZE + 22) * 0.38)}px; }}"
+        g = dock_glass()
+        top, bottom = 0.15 + 0.07 * g, 0.08 + 0.08 * g   # clear glass barely tints; frosted is milkier
+        css = (f".dock {{ border-radius: {round((ICON_SIZE + 22) * 0.38)}px; "
+               f"background-image: linear-gradient(180deg, alpha(#ffffff, {top:.3f}), alpha(#ffffff, {bottom:.3f})); }}")
         if hasattr(self.size_css, "load_from_string"):
             self.size_css.load_from_string(css)
         else:
@@ -357,7 +405,7 @@ class Dock(Gtk.ApplicationWindow):
         # the bar is the icon plus 22 px of padding and dots, with 10 px under it; windows that
         # are maximized or tiled stop above it
         Layer.set_exclusive_zone(self, ICON_SIZE + 28)
-        if self.items:
+        if rebuild and self.items:
             self.rebuild()
 
     def toggle_pin(self, app_id):
@@ -425,7 +473,7 @@ class Dock(Gtk.ApplicationWindow):
             apps = DockItem(self, "glass:apps", None,
                             gicon=Gio.ThemedIcon.new_from_names(["view-app-grid", "applications-all",
                                                                  "view-grid", "applications-other"]),
-                            name="All Apps (Super+Space)",
+                            name="All Apps (Super)",
                             action=lambda: subprocess.Popen(["sh", "-c", "glass-sound launcher; fuzzel"]))
             self.box.append(apps)
             self.items["glass:apps"] = apps

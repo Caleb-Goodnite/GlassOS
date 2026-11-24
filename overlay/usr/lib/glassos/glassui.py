@@ -5,8 +5,14 @@ whatever is behind it - including other windows. So one window over the wallpape
 frosted, and each extra window stacked on top adds another layer of frost and tint, the way
 real panes of glass do.
 
-The tint strength is a setting (Settings > Appearance > Glass tint), stored in
-~/.config/glassos/appearance.json, so every app picks it up when it starts.
+How glassy it is comes from one setting, Settings > Appearance > Glass, a slider from Clear to
+Frosted (like macOS Golden Gate's Liquid Glass slider). It is stored in
+~/.config/glassos/appearance.json as "glass" (0 = Clear, 100 = Frosted), and glass_look() turns it
+into everything it moves: the tint, and the blur Hyprland draws.
+
+Clear: a light blur, so shapes behind stay recognisable; little tint, so the wallpaper keeps its
+colour; a bright rim with a darker band just inside it, so the pane still reads as a sheet of glass.
+Frosted: a heavy blur and a milky slate tint, so nothing behind competes with the text.
 """
 import json
 import os
@@ -21,17 +27,57 @@ from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 CONF = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "glassos")
 APPEARANCE = os.path.join(CONF, "appearance.json")
-DEFAULTS = {"tint": 0.42, "frost": 4, "accent": "#6aa8ff"}
+DEFAULTS = {"glass": 35, "accent": "#6aa8ff"}
+
+# Tint colour at each end of the slider: smoky and dark when clear, a lighter milky slate when frosted
+CLEAR_TINT = (14, 16, 24)
+FROSTED_TINT = (42, 44, 58)
+
+
+def glass_look(level):
+    """Everything the Glass slider moves, from its value (0 = Clear, 100 = Frosted)."""
+    g = max(0.0, min(1.0, float(level) / 100))
+
+    def lerp(a, b):
+        return a + (b - a) * g
+
+    rgb = tuple(round(lerp(c, f)) for c, f in zip(CLEAR_TINT, FROSTED_TINT))
+    return {
+        # GlassOS windows
+        "tint": round(lerp(0.28, 0.72), 2),            # how much of the window is tint, not backdrop
+        "tint_rgb": "#%02x%02x%02x" % rgb,
+        "fill": round(lerp(0.05, 0.09), 3),            # cards and panels on the glass
+        "halo": round(lerp(0.45, 0.0), 2),             # soft shadow behind white text, for clear glass
+        # Hyprland's blur (Settings writes these to glass-settings.lua)
+        "frost_size": round(lerp(3, 10)),
+        "frost_passes": 2 if g < 0.67 else 3,
+        "frost_vibrancy": round(lerp(0.75, 0.30), 2),  # clear glass keeps the wallpaper's colour
+        "frost_brightness": round(lerp(0.70, 0.62), 2),
+        "frost_noise": round(lerp(0.006, 0.022), 3),   # frosted glass has a fine grain
+    }
 
 
 def appearance():
     a = dict(DEFAULTS)
+    saved = {}
     try:
         with open(APPEARANCE) as f:
-            a.update(json.load(f))
+            saved = json.load(f)
     except (OSError, ValueError):
         pass
-    a["tint"] = max(0.1, min(0.9, float(a["tint"])))
+    if isinstance(saved, dict):
+        a.update(saved)
+        if "glass" not in saved and "tint" in saved:
+            # saved before the Glass slider existed: map the old Tint setting onto it
+            try:
+                a["glass"] = (float(saved["tint"]) - 0.28) / 0.44 * 100
+            except (TypeError, ValueError):
+                pass
+    try:
+        a["glass"] = max(0, min(100, round(float(a["glass"]))))
+    except (TypeError, ValueError):
+        a["glass"] = DEFAULTS["glass"]
+    a["tint"] = glass_look(a["glass"])["tint"]
     return a
 
 
@@ -46,33 +92,46 @@ def save_appearance(**changes):
     return a
 
 
+# A sheet of glass, as in macOS Golden Gate: light catches the top edge (and, more faintly, the
+# bottom one, where it comes back out), and a darker band sits just inside the rim.
+def glass_edges(top=0.30, bottom=0.12, side=0.10, sheen=0.12, edge=0.16):
+    return (f"border: 1px solid alpha(#ffffff, {side}); border-top-color: alpha(#ffffff, {top}); "
+            f"border-bottom-color: alpha(#ffffff, {bottom}); "
+            f"box-shadow: inset 0 1px 1px alpha(#ffffff, {sheen}), inset 0 -1px 1px alpha(#ffffff, {sheen / 3:.3f}), "
+            f"inset 0 0 0 1px alpha(#000000, {edge});")
+
+
 def base_css():
     a = appearance()
-    t = a["tint"]
+    look = glass_look(a["glass"])
+    t, tint, fill, halo = look["tint"], look["tint_rgb"], look["fill"], look["halo"]
     acc = a["accent"]
+    pill = glass_edges(top=0.34, bottom=0.14, side=0.14, sheen=0.16, edge=0.12)
     return f"""
-window.glass {{ background-color: alpha(#10111a, {t:.2f}); color: #f4f5fa; }}
-window.glass.solid {{ background-color: alpha(#10111a, {min(0.95, t + 0.35):.2f}); }}
+window.glass {{ background-color: alpha({tint}, {t:.2f}); color: #f4f5fa;
+  background-image: linear-gradient(180deg, alpha(#ffffff, 0.045), alpha(#ffffff, 0) 140px); }}
+window.glass.solid {{ background-color: alpha({tint}, {min(0.95, t + 0.35):.2f}); }}
+window.glass label {{ text-shadow: 0 0 3px alpha(#000000, {halo}); }}
 window.glass headerbar {{ background: transparent; box-shadow: none; border: none; min-height: 42px; color: #fff; }}
 window.glass headerbar windowcontrols button {{ min-width: 14px; min-height: 14px; padding: 0; margin: 0 3px; }}
 .glass-panel {{
-  background: alpha(#ffffff, 0.06);
-  border: 1px solid alpha(#ffffff, 0.10);
-  border-top-color: alpha(#ffffff, 0.22);
+  background-image: linear-gradient(180deg, alpha(#ffffff, {fill + 0.03:.3f}), alpha(#ffffff, {fill:.3f}));
   border-radius: 18px;
-  box-shadow: inset 0 1px alpha(#ffffff, 0.06);
+  {glass_edges()}
 }}
-.glass-pane {{ background: alpha(#ffffff, 0.035); }}
-.sidebar-pane {{ background: alpha(#ffffff, 0.04); border-right: 1px solid alpha(#ffffff, 0.07); }}
+.glass-pane {{ background: alpha(#ffffff, {fill * 0.6:.3f}); }}
+.sidebar-pane {{ background: alpha(#ffffff, {fill * 0.7:.3f}); border-right: 1px solid alpha(#ffffff, 0.07); }}
 .sidebar-pane list {{ background: transparent; }}
 .sidebar-pane row {{ padding: 8px 12px; margin: 2px 10px; border-radius: 11px; color: alpha(#ffffff, 0.86); }}
-.sidebar-pane row:selected {{ background: alpha(#ffffff, 0.15); color: #fff; box-shadow: inset 0 1px alpha(#ffffff, 0.12); }}
+.sidebar-pane row:selected {{ background-image: linear-gradient(180deg, alpha(#ffffff, 0.19), alpha(#ffffff, 0.12));
+  color: #fff; box-shadow: inset 0 1px alpha(#ffffff, 0.22), inset 0 -1px alpha(#ffffff, 0.05); }}
 .sidebar-pane row:hover:not(:selected) {{ background: alpha(#ffffff, 0.06); }}
 .page {{ padding: 24px 30px 36px 30px; }}
 .page-title {{ font-size: 26px; font-weight: 800; }}
 .page-sub {{ color: alpha(#ffffff, 0.86); }}
-.card {{ background: alpha(#ffffff, 0.06); border: 1px solid alpha(#ffffff, 0.09);
-        border-top-color: alpha(#ffffff, 0.2); border-radius: 16px; padding: 14px 16px; }}
+.card {{ background-image: linear-gradient(180deg, alpha(#ffffff, {fill + 0.025:.3f}), alpha(#ffffff, {fill:.3f}));
+        border-radius: 16px; padding: 14px 16px;
+        {glass_edges(top=0.26, bottom=0.10, side=0.08, sheen=0.10, edge=0.14)} }}
 .card-title {{ font-weight: 700; }}
 .dim {{ color: alpha(#ffffff, 0.85); }}
 .small {{ font-size: 12px; }}
@@ -80,26 +139,37 @@ window.glass headerbar windowcontrols button {{ min-width: 14px; min-height: 14p
 .row {{ padding: 8px 2px; border-bottom: 1px solid alpha(#ffffff, 0.06); }}
 .ok {{ color: #5fe3a1; }}
 .warn {{ color: #ffd479; }}
-button.pill {{ border-radius: 99px; padding: 6px 16px; background: alpha(#ffffff, 0.12);
-              border: 1px solid alpha(#ffffff, 0.16); box-shadow: none; color: #fff; }}
-button.pill:hover {{ background: alpha(#ffffff, 0.2); }}
-button.accent {{ background: alpha({acc}, 0.6); border-color: alpha(#ffffff, 0.3); }}
-button.accent:hover {{ background: alpha({acc}, 0.8); }}
-button.round {{ border-radius: 99px; min-width: 32px; min-height: 32px; padding: 0;
-               background: alpha(#ffffff, 0.08); border: 1px solid alpha(#ffffff, 0.1); box-shadow: none; color: #fff; }}
-button.round:hover {{ background: alpha(#ffffff, 0.18); }}
+button.pill {{ border-radius: 99px; padding: 6px 16px; color: #fff;
+              background-image: linear-gradient(180deg, alpha(#ffffff, 0.17), alpha(#ffffff, 0.09));
+              {pill} }}
+button.pill:hover {{ background-image: linear-gradient(180deg, alpha(#ffffff, 0.25), alpha(#ffffff, 0.15)); }}
+button.pill:active {{ background-image: linear-gradient(180deg, alpha(#ffffff, 0.10), alpha(#ffffff, 0.16)); }}
+button.accent {{ background-image: linear-gradient(180deg, alpha({acc}, 0.78), alpha({acc}, 0.56));
+                border-color: alpha(#ffffff, 0.24); border-top-color: alpha(#ffffff, 0.48); }}
+button.accent:hover {{ background-image: linear-gradient(180deg, alpha({acc}, 0.92), alpha({acc}, 0.72)); }}
+button.round {{ border-radius: 99px; min-width: 32px; min-height: 32px; padding: 0; color: #fff;
+               background-image: linear-gradient(180deg, alpha(#ffffff, 0.13), alpha(#ffffff, 0.06));
+               {pill} }}
+button.round:hover {{ background-image: linear-gradient(180deg, alpha(#ffffff, 0.24), alpha(#ffffff, 0.14)); }}
 button.round:disabled {{ opacity: 0.35; }}
-entry.glass-entry, entry {{ background: alpha(#ffffff, 0.08); border: 1px solid alpha(#ffffff, 0.14);
+entry.glass-entry, entry {{ background: alpha(#000000, 0.14); border: 1px solid alpha(#ffffff, 0.12);
+                          border-bottom-color: alpha(#ffffff, 0.22);
+                          box-shadow: inset 0 1px 2px alpha(#000000, 0.22);
                           border-radius: 12px; color: #fff; caret-color: #fff; }}
 entry.glass-entry:focus-within {{ border-color: alpha({acc}, 0.8); box-shadow: 0 0 0 3px alpha({acc}, 0.25); }}
-dropdown > button {{ border-radius: 10px; background: alpha(#ffffff, 0.1); border: 1px solid alpha(#ffffff, 0.14); box-shadow: none; }}
-scale trough {{ background: alpha(#ffffff, 0.14); border-radius: 99px; min-height: 6px; }}
-scale highlight {{ background: alpha(#ffffff, 0.85); border-radius: 99px; }}
-scale slider {{ background: #fff; border-radius: 99px; min-width: 18px; min-height: 18px; margin: -6px; box-shadow: 0 1px 4px alpha(#000, 0.4); }}
-switch {{ background: alpha(#ffffff, 0.16); border-radius: 99px; }}
-switch:checked {{ background: alpha({acc}, 0.85); }}
-switch slider {{ background: #fff; border-radius: 99px; }}
-popover > contents {{ background: alpha(#1a1b27, 0.92); border-radius: 14px; border: 1px solid alpha(#ffffff, 0.12); }}
+dropdown > button {{ border-radius: 10px; background-image: linear-gradient(180deg, alpha(#ffffff, 0.14), alpha(#ffffff, 0.07));
+                    {pill} }}
+scale trough {{ background: alpha(#000000, 0.18); border-radius: 99px; min-height: 6px;
+               box-shadow: inset 0 1px 1px alpha(#000000, 0.25), 0 1px alpha(#ffffff, 0.08); }}
+scale highlight {{ background-image: linear-gradient(180deg, alpha(#ffffff, 0.95), alpha(#ffffff, 0.75)); border-radius: 99px; }}
+scale slider {{ background-image: linear-gradient(180deg, #ffffff, #e6e8f0); border-radius: 99px; min-width: 18px; min-height: 18px;
+               margin: -6px; box-shadow: 0 1px 4px alpha(#000, 0.4), inset 0 -1px alpha(#000000, 0.08); }}
+switch {{ background: alpha(#000000, 0.18); border-radius: 99px; border: 1px solid alpha(#ffffff, 0.10);
+         box-shadow: inset 0 1px 2px alpha(#000000, 0.28); }}
+switch:checked {{ background-image: linear-gradient(180deg, alpha({acc}, 0.95), alpha({acc}, 0.78)); border-color: alpha(#ffffff, 0.22); }}
+switch slider {{ background-image: linear-gradient(180deg, #ffffff, #e6e8f0); border-radius: 99px; box-shadow: 0 1px 3px alpha(#000000, 0.35); }}
+popover > contents {{ background: alpha({tint}, {max(0.9, t):.2f}); border-radius: 14px;
+                     {glass_edges(top=0.28, bottom=0.10, side=0.12, sheen=0.10, edge=0.0)} }}
 list.plain, list.plain row {{ background: transparent; }}
 list.plain row {{ border-radius: 10px; }}
 list.plain row:hover {{ background: alpha(#ffffff, 0.05); }}
@@ -107,16 +177,45 @@ scrolledwindow, viewport {{ background: transparent; }}
 """
 
 
-def apply_css(extra=""):
-    prov = Gtk.CssProvider()
-    css = base_css() + extra
+# The red/yellow/green window buttons (traffic_lights below), in macOS's colours. They match the
+# title bars Hyprland's hyprbars plugin draws on other apps' windows (hyprland.lua).
+TRAFFIC_LIGHTS_CSS = """
+.traffic-lights { margin-left: 4px; margin-right: 8px; }
+.traffic-lights button { min-width: 13px; min-height: 13px; padding: 0; border-radius: 99px; border: none;
+                         background-image: none; box-shadow: inset 0 0 0 0.5px alpha(#000, 0.25); color: alpha(#000, 0.6); }
+.traffic-lights button label { font-size: 10px; font-weight: 800; opacity: 0; text-shadow: none; }
+.traffic-lights:hover button label { opacity: 1; }
+.traffic-lights button.tl-close { background-color: #ff5f57; }
+.traffic-lights button.tl-min { background-color: #febc2e; }
+.traffic-lights button.tl-full { background-color: #28c840; }
+window.glass:backdrop .traffic-lights:not(:hover) button { background-color: alpha(#ffffff, 0.22); }
+"""
+
+
+_css = {"prov": None, "extra": ""}
+
+
+def _load_css(prov, extra):
+    css = base_css() + TRAFFIC_LIGHTS_CSS + extra
     if hasattr(prov, "load_from_string"):
         prov.load_from_string(css)
     else:
         prov.load_from_data(css.encode())
+
+
+def apply_css(extra=""):
+    prov = Gtk.CssProvider()
+    _load_css(prov, extra)
     Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), prov,
                                               Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    _css.update(prov=prov, extra=extra)
     return prov
+
+
+def reload_css():
+    """Restyle this app's windows after the Glass slider or accent colour changed."""
+    if _css["prov"] is not None:
+        _load_css(_css["prov"], _css["extra"])
 
 
 def fit_size(win, width, height):
@@ -260,6 +359,47 @@ def work_areas():
     return out
 
 
+def my_window_address():
+    """Hyprland's address for this app's focused window (or any of its windows)."""
+    try:
+        act = json.loads(hypr("j/activewindow") or "{}")
+        if act.get("pid") == os.getpid():
+            return act.get("address")
+        for c in json.loads(hypr("j/clients") or "[]"):
+            if c.get("pid") == os.getpid():
+                return c.get("address")
+    except ValueError:
+        pass
+    return None
+
+
+def minimize(win):
+    """Yellow button: hide the window on the "minimized" desktop, like every other window's
+    yellow button (hyprland.lua). Clicking the app in the dock brings it back."""
+    addr = my_window_address()
+    if addr:
+        hypr(f'dispatch hl.dsp.window.move({{ workspace = "special:minimized", follow = false, window = "address:{addr}" }})')
+    else:
+        win.minimize()
+
+
+def traffic_lights(win):
+    """The Mac-style red/yellow/green buttons, drawn the same as the title bars Hyprland puts on
+    other apps: red closes, yellow minimizes, green toggles full size. Symbols show on hover."""
+    lights = hbox(8, "traffic-lights no-drag")
+    lights.set_valign(Gtk.Align.CENTER)
+    for cls, sym, tip, cb in (
+        ("tl-close", "×", "Close", win.close),
+        ("tl-min", "−", "Minimize", lambda: minimize(win)),
+        ("tl-full", "+", "Full size", lambda: win.unmaximize() if win.is_maximized() else win.maximize()),
+    ):
+        b = button(sym, cb, cls)
+        b.set_tooltip_text(tip)
+        b.set_valign(Gtk.Align.CENTER)
+        lights.append(b)
+    return lights
+
+
 _INTERACTIVE = (Gtk.Button, Gtk.Editable, Gtk.DropDown, Gtk.MenuButton, Gtk.Switch, Gtk.Scale, Gtk.CheckButton)
 
 
@@ -269,9 +409,14 @@ def drag_by_titlebar(win, header):
     Apps normally ask the compositor to do this (xdg_toplevel.move), but Hyprland ignores that
     request, so a GlassOS window moves itself instead: while the button is held on an empty part
     of the title bar, it follows the pointer through Hyprland's control socket. Buttons, fields
-    and tabs in the title bar keep working, and a double-click maximizes or restores.
+    and tabs in the title bar keep working, and a double-click zooms the window or zooms it back.
     It reads the pointer position from Hyprland rather than from its own motion events, so it
-    also works with the absolute pointers virtual machines use."""
+    also works with the absolute pointers virtual machines use.
+    It also swaps GTK's own window buttons for the red/yellow/green ones, first in the header."""
+    header.set_show_title_buttons(False)
+    lights = traffic_lights(win)
+    header.pack_start(lights)
+    lights.get_parent().reorder_child_after(lights, None)   # before anything the app packed
     g = Gtk.GestureDrag(button=1)
     g.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
     st = {"timer": 0, "last_press": 0.0}
@@ -290,9 +435,12 @@ def drag_by_titlebar(win, header):
             return
         gesture.set_state(Gtk.EventSequenceState.CLAIMED)
         now = time.monotonic()
-        if now - st["last_press"] < 0.4:   # double-click: maximize / restore
+        if now - st["last_press"] < 0.4:   # double-click: zoom between the top bar and dock, or back
             st["last_press"] = 0.0
-            win.unmaximize() if win.is_maximized() else win.maximize()
+            if win.is_maximized():
+                win.unmaximize()
+            elif my_window_address():
+                hypr('eval glass_window("zoom")')   # acts on the active window: this one
             return
         st["last_press"] = now
         try:

@@ -86,7 +86,7 @@ When an event has no file, GlassOS tries the fallbacks in order, then the inheri
 | `window-open` | A window opens | none |
 | `window-close` | A window closes | none |
 | `workspace` | You switch desktops (workspaces) | none |
-| `launcher` | App search opens (Super+Space) | none |
+| `launcher` | App search opens (Super) | none |
 | `screenshot` | A screenshot is taken | none |
 | `volume` | Volume changes (plays at the new level) | none |
 | `service-failed` | A background service crashes | `error` |

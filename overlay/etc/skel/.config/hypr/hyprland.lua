@@ -61,9 +61,12 @@ hl.env("HYPRCURSOR_SIZE", "24")
 hl.env("QT_QPA_PLATFORM", "wayland;xcb")
 hl.env("MOZ_ENABLE_WAYLAND", "1")
 hl.env("GDK_BACKEND", "wayland,x11")
--- Older (GTK 3) apps like Files and Text Editor draw their own title bar, so every window has
--- one to drag and close
-hl.env("GTK_CSD", "1")
+-- Every window gets a title bar with the red/yellow/green buttons from the hyprbars plugin (see
+-- "Title bars" below). Only if the plugin is missing do older (GTK 3) apps like Files and Text
+-- Editor draw their own title bar instead, so every window still has one to drag and close.
+local hyprbars_so = "/usr/lib/glassos/hyprland/libhyprbars.so"
+local have_hyprbars = io.open(hyprbars_so, "r")
+if have_hyprbars then have_hyprbars:close() else hl.env("GTK_CSD", "1") end
 
 -------------------------------------------------------------------------------
 -- Look and feel: frosted glass, soft depth, continuous ("squircle") corners
@@ -78,9 +81,11 @@ hl.config({
         gaps_out = 14,
         border_size = 1,
         col = {
-            -- a thin specular rim, brighter on the top-left like light hitting glass
-            active_border   = { colors = { "rgba(ffffff70)", "rgba(ffffff18)" }, angle = 135 },
-            inactive_border = { colors = { "rgba(ffffff30)", "rgba(ffffff0a)" }, angle = 135 },
+            -- a thin specular rim, as on macOS Golden Gate's glass: brightest on the top-left where
+            -- the light hits, dim along the sides, and catching light again at the bottom-right
+            -- where it passes back out through the glass
+            active_border   = { colors = { "rgba(ffffff8c)", "rgba(ffffff1c)", "rgba(ffffff14)", "rgba(ffffff4a)" }, angle = 135 },
+            inactive_border = { colors = { "rgba(ffffff3c)", "rgba(ffffff0c)", "rgba(ffffff0a)", "rgba(ffffff22)" }, angle = 135 },
         },
         resize_on_border = true,
         extend_border_grab_area = 12,
@@ -104,15 +109,18 @@ hl.config({
             color_inactive = 0x33000000,
         },
 
+        -- Settings > Appearance > Glass slides all of these together, from Clear (a light blur that
+        -- keeps shapes and colour behind) to Frosted (a heavy, grainy blur). The defaults here are
+        -- the slider's default position; glassui.glass_look() has the whole range.
         blur = {
             enabled   = true,
-            size      = M.light and 4 or pick(S.frost_size, 5),     -- Settings > Appearance > Frost
+            size      = M.light and 4 or pick(S.frost_size, 5),
             passes    = M.light and 1 or pick(S.frost_passes, 2),
-            noise     = 0.012,
+            noise     = pick(S.frost_noise, 0.012),
             contrast  = 1.0,
-            brightness = 0.66,    -- darkens what shows through, so white text stays readable over white pages
-            vibrancy  = 0.5,      -- keeps the wallpaper's colour in the glass
-            vibrancy_darkness = 0.25,
+            brightness = pick(S.frost_brightness, 0.67),  -- darkens what shows through, so white text stays readable over white pages
+            vibrancy  = pick(S.frost_vibrancy, 0.59),     -- keeps the wallpaper's colour in the glass
+            vibrancy_darkness = 0.4,                       -- ...in its dark parts too, not just the bright ones
             popups    = true,
             new_optimizations = true,
             xray      = M.light or false,
@@ -255,12 +263,93 @@ watch:set_enabled(false)
 
 hl.on("window.fullscreen", function(w)
     w = w or hl.get_active_window()
-    if w and w.fullscreen == 1 then                     -- the app asked to be maximized
+    -- the app asked to be maximized (client 1); a zoom (below) is maximized with client 0
+    if w and w.fullscreen == 1 and w.fullscreen_client == 1 then
         set_fullscreen(w.address, 2, 1)
         full_size[w.address] = true
         watch:set_enabled(true)
     end
 end)
+
+-------------------------------------------------------------------------------
+-- Title bars: Mac-style red, yellow and green buttons on every window
+--
+-- The buttons run `hyprctl eval 'glass_window("...")'`, which calls this function. It acts on
+-- the focused window: clicking a button focuses its window first.
+--   "close"    red: closes the window
+--   "minimize" yellow: hides it on the "minimized" desktop; click its app in the dock to get it back
+--   "full"     green: full size (covers the top bar and dock) and back
+--   "zoom"     a double-click on the title bar: fill the space between the top bar and the dock,
+--              and back, like double-clicking a title bar on a Mac
+function glass_window(action)
+    local w = hl.get_active_window()
+    if not w then return end
+    local sel = "address:" .. w.address
+    if action == "close" then
+        hl.dispatch(hl.dsp.window.close({ window = sel }))
+    elseif action == "minimize" then
+        hl.dispatch(hl.dsp.window.move({ workspace = "special:minimized", follow = false, window = sel }))
+    elseif action == "full" then
+        if w.fullscreen ~= 0 then
+            full_size[w.address] = nil
+            set_fullscreen(w.address, 0, 0)
+        else
+            set_fullscreen(w.address, 2, 1)               -- same full size as an app's own maximize
+            full_size[w.address] = true
+            watch:set_enabled(true)
+        end
+    elseif action == "zoom" then
+        full_size[w.address] = nil
+        set_fullscreen(w.address, w.fullscreen == 0 and 1 or 0, 0)
+    end
+end
+
+-- The bars come from Hyprland's hyprbars plugin, compiled into the image by the build. Hyprland
+-- loads plugins after reading this file and then reads it again, so the plugin's settings are
+-- only applied on that second pass, once hl.plugin.hyprbars exists. If the plugin is missing or
+-- fails to load, windows simply have no bar (GTK apps draw their own, see Environment above)
+-- and still move with Super+drag.
+if have_hyprbars then hl.plugin.load(hyprbars_so) end
+if hl.plugin.hyprbars then
+    hl.config({ plugin = { hyprbars = {
+        bar_height            = 34,
+        bar_color             = "rgba(10111a8c)",    -- the same dark glass as GlassOS's own apps
+        bar_blur              = true,
+        ["col.text"]          = "rgba(ffffffd9)",
+        bar_text_font         = "Inter",
+        bar_text_size         = 11,
+        bar_text_align        = "center",
+        bar_buttons_alignment = "left",
+        bar_padding           = 14,                   -- clears the rounded corner
+        bar_button_padding    = 8,
+        bar_part_of_window    = true,
+        bar_precedence_over_border = true,
+        icon_on_hover         = true,                  -- symbols show when the pointer is over them, like a Mac
+        inactive_button_color = "rgba(ffffff38)",     -- grey buttons on windows that aren't focused
+        on_double_click       = [[hyprctl eval 'glass_window("zoom")']],
+    } } })
+    -- left to right; the colours are macOS's
+    for _, b in ipairs({
+        { color = "rgb(ff5f57)", icon = "×", action = "close" },
+        { color = "rgb(febc2e)", icon = "−", action = "minimize" },
+        { color = "rgb(28c840)", icon = "+", action = "full" },
+    }) do
+        hl.plugin.hyprbars.add_button({
+            bg_color = b.color,
+            fg_color = "rgba(00000099)",
+            size     = 13,
+            icon     = b.icon,
+            action   = string.format([[hyprctl eval 'glass_window("%s")']], b.action),
+        })
+    end
+    -- GlassOS's own apps keep their header (it holds their tabs, search and buttons) and draw
+    -- the same three buttons there, so they don't get a second bar
+    hl.window_rule({
+        name  = "glass-own-title-bar",
+        match = { class = "^os\\.glass\\..*" },
+        ["hyprbars:no_bar"] = true,
+    })
+end
 
 -- Frosted glass behind the bar, dock, launcher and notifications
 for _, ns in ipairs({ "waybar", "launcher", "notifications", "glass-dock", "glass-osd" }) do
@@ -276,7 +365,10 @@ end
 -- Keyboard shortcuts  (Super = the Windows/Command key)
 local mod = "SUPER"
 
-hl.bind(mod .. " + SPACE",  hl.dsp.exec_cmd(launcher),          { description = "Search apps" })
+-- Tap Super on its own to search apps. It fires when Super is let go, and only if no other key
+-- was pressed while it was held, so Super+E, Super+drag and the rest still work as before.
+hl.bind(mod .. " + SUPER_L", hl.dsp.exec_cmd(launcher), { release = true, description = "Search apps" })
+hl.bind(mod .. " + SUPER_R", hl.dsp.exec_cmd(launcher), { release = true, description = "Search apps" })
 hl.bind(mod .. " + RETURN", hl.dsp.exec_cmd(terminal),          { description = "Terminal" })
 hl.bind(mod .. " + E",      hl.dsp.exec_cmd(files),             { description = "Files" })
 hl.bind(mod .. " + B",      hl.dsp.exec_cmd(browser),           { description = "Web browser" })
