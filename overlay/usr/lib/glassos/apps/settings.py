@@ -1291,43 +1291,183 @@ class PrivacyPage(Page):
 
 
 # --------------------------------------------------------------------------- Users
+USERS_HELPER = "/usr/lib/glassos/glass-users"   # runs as root through pkexec, which asks for an admin password
+
+
+def users_admin(args, password=None):
+    """Run the account helper as root. polkit shows a password window first. Returns an error
+    message for people, or None when it worked."""
+    try:
+        r = subprocess.run(["pkexec", USERS_HELPER, *args], input=(password or "") + "\n",
+                           capture_output=True, text=True, timeout=300)
+    except Exception as e:
+        return str(e)
+    if r.returncode == 0:
+        return None
+    if r.returncode in (126, 127):   # the password window was closed, or the password was wrong
+        return "Nothing was changed: an administrator's password is needed."
+    return (r.stderr or r.stdout).strip() or "Something went wrong."
+
+
+def people():
+    """Accounts people log in to (not system accounts): [(username, full name, is admin)]"""
+    try:
+        import grp
+        admins = set(grp.getgrnam("sudo").gr_mem)
+    except KeyError:
+        admins = set()
+    out = []
+    for p in pwd.getpwall():
+        if 1000 <= p.pw_uid < 60000 and not p.pw_shell.endswith(("nologin", "false")):
+            out.append((p.pw_name, p.pw_gecos.split(",")[0] or p.pw_name, p.pw_name in admins))
+    return sorted(out, key=lambda x: x[1].lower())
+
+
+def account_name(full):
+    """"Sarah Connor" -> "sarah": a suggestion; people can change it"""
+    first = re.sub(r"[^a-z0-9_-]", "", (full.strip().split() or [""])[0].lower())
+    return first if re.match(r"^[a-z_]", first) else ""
+
+
 class UsersPage(Page):
     title, icon = "Users", "system-users-symbolic"
 
     def __init__(self, win):
         super().__init__(win)
-        self.header("Users")
+        self.header("Users", "Each person gets their own desktop, files and settings.")
         me = pwd.getpwuid(os.getuid())
+        self.me = me.pw_name
         c = ui.card()
-        c.append(ui.setting_row(me.pw_gecos.split(",")[0] or me.pw_name, f"Username: {me.pw_name}", Gtk.Box()))
-        c.append(ui.setting_row("Password", None, ui.button(
-            "Change…", lambda: spawn(["glass-launch", "foot", "--title", "Change password", "-e", "passwd"]))))
-        self.auto = label("", "dim small")
+        c.append(ui.setting_row(me.pw_gecos.split(",")[0] or me.pw_name, f"Account name: {me.pw_name}", Gtk.Box()))
+        c.append(ui.setting_row("Password", None, ui.button("Change…", lambda: self.password_dialog(self.me))))
+        self.auto = Gtk.Switch()
+        self.auto_id = self.auto.connect("state-set", self.on_autologin)
         c.append(ui.setting_row("Log in automatically", "Skips the password at startup. Anyone who turns on "
                                 "this computer gets your desktop.", self.auto))
+        self.msg = label("", "dim small", wrap=True)
+        c.append(self.msg)
+        self.body.append(c)
+        self.others = ui.card("Other people")
+        self.others_list = vbox(0)
+        self.others.append(self.others_list)
         row = hbox(8)
         row.append(ui.spacer())
-        row.append(ui.button("Turn on", lambda: self.autologin("on")))
-        row.append(ui.button("Turn off", lambda: self.autologin("off")))
-        c.append(row)
-        self.body.append(c)
-        o = ui.card("Other people", "To add an account, open a terminal and run:  sudo adduser NAME")
-        self.body.append(o)
+        row.append(ui.button("Add Person…", self.add_dialog, "pill accent"))
+        self.others.append(row)
+        self.body.append(self.others)
 
     def refresh(self):
-        me = pwd.getpwuid(os.getuid()).pw_name
         try:
             conf = open("/etc/greetd/config.toml").read()
             m = re.search(r"\[initial_session\][^\[]*user\s*=\s*\"([^\"]+)\"", conf)
-            on = bool(m and m.group(1) == me)
+            on = bool(m and m.group(1) == self.me)
         except OSError:
             on = False
-        self.auto.set_text("On" if on else "Off")
+        self.auto.handler_block(self.auto_id)
+        self.auto.set_active(on)
+        self.auto.set_state(on)
+        self.auto.handler_unblock(self.auto_id)
+        ui.clear(self.others_list)
+        others = [p for p in people() if p[0] != self.me]
+        if not others:
+            self.others_list.append(label("Only you have an account on this computer.", "dim small"))
+        for name, full, admin in others:
+            self.others_list.append(ui.setting_row(full, f"{name} · {'Administrator' if admin else 'Standard'}",
+                                                   ui.button("Remove…", lambda n=name, f=full: self.remove_dialog(n, f))))
 
-    def autologin(self, state):
-        spawn(["glass-launch", "foot", "--title", "Automatic login", "-e", "sh", "-c",
-               f"sudo glass-autologin {state} {pwd.getpwuid(os.getuid()).pw_name}; echo; read -p 'Press Enter to close' x"])
-        GLib.timeout_add(4000, lambda: (self.refresh(), False)[1])
+    def after(self, err, ok_text=""):
+        self.msg.set_text(err or ok_text)
+        self.refresh()
+
+    def on_autologin(self, sw, state):
+        def done(err):
+            self.after(err, "Automatic login is on." if state else "Automatic login is off.")
+        bg(lambda: users_admin(["autologin", self.me, "on" if state else "off"]), done)
+        return True   # the switch moves once the change has worked (refresh)
+
+    # ---- small windows
+    def dialog(self, title, action_text, on_ok):
+        dlg = Gtk.Window(transient_for=self.win, modal=True, title=title)
+        dlg.add_css_class("glass")
+        dlg.add_css_class("solid")
+        dlg.set_default_size(400, -1)
+        b = vbox(12)
+        for m in ("top", "bottom", "start", "end"):
+            getattr(b, f"set_margin_{m}")(20)
+        b.append(label(title, "card-title"))
+        err = label("", "small warn", wrap=True)
+        buttons = hbox(8)
+        buttons.append(ui.spacer())
+        buttons.append(ui.button("Cancel", dlg.close))
+        ok = ui.button(action_text, lambda: on_ok(dlg, err), "pill accent")
+        buttons.append(ok)
+        dlg.set_child(b)
+        return dlg, b, err, buttons
+
+    def password_dialog(self, user):
+        def ok(dlg, err):
+            p1, p2 = pw1.get_text(), pw2.get_text()
+            if not p1:
+                err.set_text("Type a password.")
+            elif p1 != p2:
+                err.set_text("The two passwords don't match.")
+            else:
+                dlg.close()
+                bg(lambda: users_admin(["password", user], p1), lambda e: self.after(e, "Password changed."))
+        dlg, b, err, buttons = self.dialog("Change password", "Change", ok)
+        pw1 = Gtk.PasswordEntry(show_peek_icon=True, placeholder_text="New password")
+        pw2 = Gtk.PasswordEntry(show_peek_icon=True, placeholder_text="Type it again")
+        pw2.connect("activate", lambda *_: ok(dlg, err))
+        for w in (pw1, pw2, err, buttons):
+            b.append(w)
+        dlg.present()
+
+    def add_dialog(self):
+        def ok(dlg, err):
+            full, name = full_e.get_text().strip(), name_e.get_text().strip()
+            p1, p2 = pw1.get_text(), pw2.get_text()
+            if not full:
+                err.set_text("Type the person's name.")
+            elif not re.match(r"^[a-z_][a-z0-9_-]{0,31}$", name):
+                err.set_text("The account name can use lowercase letters, numbers, - and _, and starts with a letter.")
+            elif any(name == p[0] for p in pwd.getpwall()):
+                err.set_text(f"There's already an account called {name}.")
+            elif not p1:
+                err.set_text("Type a password.")
+            elif p1 != p2:
+                err.set_text("The two passwords don't match.")
+            else:
+                dlg.close()
+                kind = "admin" if admin.get_active() else "standard"
+                bg(lambda: users_admin(["add", name, full, kind], p1),
+                   lambda e: self.after(e, f"{full} can now log in as {name}."))
+        dlg, b, err, buttons = self.dialog("Add a person", "Add Person", ok)
+        full_e = Gtk.Entry(placeholder_text="Full name, e.g. Sarah Connor")
+        name_e = Gtk.Entry(placeholder_text="Account name, e.g. sarah")
+        edited = {"name": False}
+        full_e.connect("changed", lambda e: edited["name"] or name_e.set_text(account_name(e.get_text())))
+        name_e.connect("changed", lambda e: edited.__setitem__("name", e.has_focus()) if e.has_focus() else None)
+        pw1 = Gtk.PasswordEntry(show_peek_icon=True, placeholder_text="Password")
+        pw2 = Gtk.PasswordEntry(show_peek_icon=True, placeholder_text="Type it again")
+        admin = Gtk.Switch()
+        b.append(full_e)
+        b.append(name_e)
+        b.append(pw1)
+        b.append(pw2)
+        b.append(ui.setting_row("Administrator", "Can install apps, add people and change settings for everyone.", admin))
+        b.append(err)
+        b.append(buttons)
+        dlg.present()
+
+    def remove_dialog(self, user, full):
+        def ok(dlg, _err):
+            dlg.close()
+            bg(lambda: users_admin(["remove", user]), lambda e: self.after(e, f"{full}'s account was removed."))
+        dlg, b, err, buttons = self.dialog(f"Remove {full}?", "Remove", ok)
+        b.append(label(f"This deletes the account {user} and everything in /home/{user}: documents, "
+                       "pictures, settings. It can't be undone.", "small", wrap=True))
+        b.append(buttons)
+        dlg.present()
 
 
 # --------------------------------------------------------------------------- About

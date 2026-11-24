@@ -13,6 +13,7 @@ systemd-sysv                # starts and supervises every service; keeps the log
 systemd-timesyncd           # keeps your clock correct (asks a public time server; needed for HTTPS)
 libpam-systemd              # tracks login sessions so devices and audio belong to the logged-in user
 polkitd                     # decides which apps may shut down, mount drives, etc. (asks you when needed)
+pkexec                      # Settings > Users: asks for an admin password in a window to add or change accounts
 dbus-user-session           # lets desktop apps talk to each other
 udev                        # detects hardware as it is plugged in
 sudo                        # lets your account do admin tasks when you ask
