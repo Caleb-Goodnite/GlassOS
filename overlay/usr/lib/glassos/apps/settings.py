@@ -1598,6 +1598,18 @@ def whats_new(version):
     return [l.strip()[2:] for l in out.splitlines() if l.startswith(" * ")]
 
 
+def pretty_version(v):
+    """glassos-desktop's version for people: "1:142+1.5.0" -> "1.5.0 (build 142)".
+    Older builds were numbered "1.0.0+git28" (-> "1.0.0 (build 28)") or "1.5.0+local2026...". """
+    m = re.match(r"(?:\d+:)?(\d+)\+(.+)$", v or "")
+    if m:
+        return f"{m.group(2)} (build {m.group(1)})"
+    m = re.match(r"(?:\d+:)?([^+]+)\+git(\d+)$", v or "")
+    if m:
+        return f"{m.group(1)} (build {m.group(2)})"
+    return (v or "?").split("+")[0]
+
+
 def human_size(n):
     for unit in ("bytes", "KB", "MB", "GB"):
         if n < 1000 or unit == "GB":
@@ -1624,7 +1636,7 @@ class UpdatesPage(Page):
         rel = info.get("GLASSOS_RELEASE") or info.get("GLASSOS_VERSION", "")
         t.append(label(f"GlassOS {rel}", "card-title"))
         chan = update_channel()
-        t.append(label(f"Build {info.get('GLASSOS_VERSION', '?')} · "
+        t.append(label(f"Build {info.get('GLASSOS_BUILD_NUMBER') or pretty_version(info.get('GLASSOS_VERSION'))} · "
                        + ("test builds (every change, as soon as it's made)" if chan == "dev" else f"{chan} releases"),
                        "dim small"))
         self.checked = label("", "dim small")
@@ -1726,7 +1738,7 @@ class UpdatesPage(Page):
         if glass:
             g = glass[0]
             box = vbox(4, "row")
-            box.append(label(f"GlassOS {g['new']}", "card-title"))
+            box.append(label(f"GlassOS {pretty_version(g['new'])}", "card-title"))
             notes = vbox(2)
             box.append(notes)
             c.append(box)
