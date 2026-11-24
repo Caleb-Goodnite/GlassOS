@@ -11,7 +11,7 @@
   "spacing": 4,
   "modules-left": ["image#logo", "custom/app", "hyprland/workspaces"],
   "modules-center": [],
-  "modules-right": ["custom/privacy", "tray", "network", "pulseaudio", "battery", "custom/clock"],
+  "modules-right": ["custom/privacy", "tray", "network", "pulseaudio", "battery", "custom/control", "custom/clock"],
 
   "image#logo": {
     "path": "/usr/share/glassos/logo-symbolic.png",
@@ -49,7 +49,8 @@
     "tooltip-format-wifi": "{essid} ({signalStrength}%)\n{ipaddr}",
     "tooltip-format-ethernet": "Wired: {ifname}\n{ipaddr}",
     "tooltip-format-disconnected": "Not connected",
-    "on-click": "glass-launch glass-settings --page network"
+    "on-click": "glass-panel wifi",
+    "on-click-right": "glass-launch glass-settings --page network"
   },
   "pulseaudio": {
     "format": "{icon}",
@@ -59,7 +60,7 @@
     "scroll-step": 0,
     "on-scroll-up": "glass-volume up",
     "on-scroll-down": "glass-volume down",
-    "on-click": "glass-launch glass-settings --page sound",
+    "on-click": "glass-panel sound",
     "on-click-right": "glass-volume mute"
   },
   "battery": {
@@ -68,6 +69,12 @@
     "format-charging": "  {capacity}%",
     "format-icons": ["", "", "", "", ""],
     "tooltip-format": "{timeTo}\n{power:.1f} W"
+  },
+  // Control Centre: Wi-Fi, Bluetooth, brightness and volume in one drop-down
+  "custom/control": {
+    "format": "\uf1de",
+    "tooltip": false,
+    "on-click": "glass-panel control"
   },
   "custom/clock": {
     "exec": "date +'%a %b %-d   %-I:%M %p'",

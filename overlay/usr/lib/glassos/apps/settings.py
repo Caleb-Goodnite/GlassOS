@@ -23,6 +23,7 @@ import time
 sys.path.insert(0, "/usr/lib/glassos")
 sys.path.insert(0, "/usr/lib/glassos/lens")
 import glassui as ui  # noqa: E402
+from glasshw import get_volume, nm_connect_new, nm_split, wpctl_devices  # noqa: E402
 from glassui import hbox, label, vbox  # noqa: E402
 import gi  # noqa: E402
 
@@ -190,40 +191,6 @@ def dropdown(items, selected=0, cb=None, search=False):
 
 
 # --------------------------------------------------------------------------- Wi-Fi
-NM = "org.freedesktop.NetworkManager"
-
-
-def nm_split(line):
-    return [p.replace("\\:", ":") for p in re.split(r"(?<!\\):", line)]
-
-
-def nm_connect_new(ssid, password=None):
-    """Add + activate a Wi-Fi connection over D-Bus, so the password never appears in a
-    process list (it isn't passed on a command line)."""
-    bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
-
-    def call(path, iface, method, args, rtype):
-        return bus.call_sync(NM, path, iface, method, args, GLib.VariantType(rtype), Gio.DBusCallFlags.NONE,
-                             60000, None).unpack()
-
-    def prop(path, iface, name):
-        return call(path, "org.freedesktop.DBus.Properties", "Get", GLib.Variant("(ss)", (iface, name)), "(v)")[0]
-
-    for dev in call("/org/freedesktop/NetworkManager", NM, "GetDevices", None, "(ao)")[0]:
-        if prop(dev, NM + ".Device", "DeviceType") != 2:
-            continue
-        for ap in call(dev, NM + ".Device.Wireless", "GetAllAccessPoints", None, "(ao)")[0]:
-            if bytes(prop(ap, NM + ".AccessPoint", "Ssid")).decode(errors="replace") != ssid:
-                continue
-            settings = {}
-            if password:
-                settings["802-11-wireless-security"] = {"psk": GLib.Variant("s", password)}
-            call("/org/freedesktop/NetworkManager", NM, "AddAndActivateConnection",
-                 GLib.Variant("(a{sa{sv}}oo)", (settings, dev, ap)), "(oo)")
-            return True
-    raise RuntimeError(f"Couldn't find the network \"{ssid}\" any more.")
-
-
 class NetworkPage(Page):
     title, icon = "Wi-Fi & Network", "network-wireless-symbolic"
 
@@ -569,37 +536,6 @@ class DisplaysPage(Page):
 
 
 # --------------------------------------------------------------------------- Sound
-def wpctl_devices():
-    """Parse `wpctl status` -> {'sinks': [(id, name, default)], 'sources': [...]}"""
-    _, out, _ = run(["wpctl", "status"])
-    res = {"sinks": [], "sources": []}
-    section = None
-    in_audio = False
-    for line in out.splitlines():
-        s = line.strip(" │├└─")
-        if line.startswith("Audio"):
-            in_audio = True
-            continue
-        if line.startswith(("Video", "Settings")):
-            in_audio = False
-        if not in_audio:
-            continue
-        if s.endswith(":"):
-            section = {"Sinks:": "sinks", "Sources:": "sources"}.get(s)
-            continue
-        if section:
-            m = re.match(r"(\*)?\s*(\d+)\.\s+(.+?)\s*(\[vol:.*\])?$", s)
-            if m:
-                res[section].append((m.group(2), m.group(3), bool(m.group(1))))
-    return res
-
-
-def get_volume(target):
-    _, out, _ = run(["wpctl", "get-volume", target])
-    m = re.search(r"([\d.]+)", out)
-    return (float(m.group(1)) if m else 0.0), "MUTED" in out
-
-
 class SoundPage(Page):
     title, icon = "Sound", "audio-speakers-symbolic"
 

@@ -1,0 +1,11 @@
+#!/bin/sh
+# glass-panel wifi|bluetooth|sound|control
+# The drop-downs under the top bar's Wi-Fi, volume and Control Centre icons.
+# gtk4-layer-shell must be loaded before GTK/Wayland in Python.
+for lib in /usr/lib/*/libgtk4-layer-shell.so.0 /usr/lib/libgtk4-layer-shell.so.0; do
+  if [ -e "$lib" ]; then
+    export LD_PRELOAD="$lib${LD_PRELOAD:+:$LD_PRELOAD}"
+    break
+  fi
+done
+exec python3 /usr/lib/glassos/apps/panel.py "$@"

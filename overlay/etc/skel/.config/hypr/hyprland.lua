@@ -351,8 +351,8 @@ if hl.plugin.hyprbars then
     })
 end
 
--- Frosted glass behind the bar, dock, launcher and notifications
-for _, ns in ipairs({ "waybar", "launcher", "notifications", "glass-dock", "glass-osd" }) do
+-- Frosted glass behind the bar, dock, launcher, notifications and the top bar's drop-downs
+for _, ns in ipairs({ "waybar", "launcher", "notifications", "glass-dock", "glass-osd", "glass-panel" }) do
     hl.layer_rule({
         name  = "glass-blur-" .. ns,
         match = { namespace = ns },
