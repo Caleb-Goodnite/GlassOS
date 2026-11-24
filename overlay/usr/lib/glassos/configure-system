@@ -74,6 +74,15 @@ systemctl --global disable waybar.service mako.service hypridle.service foot-ser
 # The login screen runs on tty1, straight after the boot splash, so no text login prompt flashes
 # up in between. Text logins stay on Ctrl+Alt+F2 to F6 if the graphics ever fail.
 systemctl disable getty@tty1.service >/dev/null 2>&1 || true
+# Automatic login for an account that doesn't exist (the live USB's "glass" on an installed
+# computer) stops the login screen from starting at all: a black screen. Drop it, keep the
+# login screen. (Not during the ISO build: the live user is made after this runs.)
+if [ -z "${GLASSOS_BUILD:-}" ] && [ -f /etc/greetd/config.toml ]; then
+  u="$(sed -n '/^\[initial_session\]/,/^\[/ s/^user *= *"\(.*\)"/\1/p' /etc/greetd/config.toml | head -n1)"
+  if [ -n "$u" ] && ! getent passwd "$u" >/dev/null; then
+    sed -i '/^\[initial_session\]/,/^\[/{/^\[initial_session\]/d;/^command *=/d;/^user *=/d}' /etc/greetd/config.toml
+  fi
+fi
 # computers installed before this had the login screen on tty7 (applies at the next restart)
 [ -f /etc/greetd/config.toml ] && sed -i 's/^vt = 7$/vt = 1/' /etc/greetd/config.toml
 
