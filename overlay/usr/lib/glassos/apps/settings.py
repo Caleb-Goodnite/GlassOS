@@ -8,7 +8,7 @@ Everything it changes is a plain file you can read:
   ~/.config/hypr/hypridle.conf        dim / lock / screen-off timers
 System-wide things (Wi-Fi, Bluetooth, time zone) go through NetworkManager, BlueZ and systemd.
 
-Usage: glass-settings [--page network|bluetooth|displays|sound|appearance|input|time|power|privacy|users|about]
+Usage: glass-settings [--page network|bluetooth|displays|sound|appearance|input|time|power|privacy|users|updates|about]
 """
 import glob
 import json
@@ -1406,6 +1406,305 @@ class UsersPage(Page):
         dlg.present()
 
 
+# --------------------------------------------------------------------------- Software Update
+UPDATES_CHECK = "/usr/lib/glassos/updates-check"      # apt-get update, as root through pkexec (no password)
+UPDATES_INSTALL = "/usr/lib/glassos/updates-install"  # apt-get full-upgrade, asks for an admin password
+RESTART_FOR = ("linux-image", "glassos-desktop", "libc6", "systemd", "dbus", "hyprland", "firmware-")
+
+
+def build_info():
+    info = {}
+    try:
+        with open("/usr/share/glassos/build-info") as f:
+            for line in f:
+                k, _, v = line.strip().partition("=")
+                if k:
+                    info[k] = v
+    except OSError:
+        pass
+    return info
+
+
+def update_channel():
+    try:
+        with open("/etc/glassos/updates.conf") as f:
+            for line in f:
+                k, _, v = line.partition("=")
+                if k.strip() == "channel" and v.strip():
+                    return v.strip()
+    except OSError:
+        pass
+    return build_info().get("UPDATE_CHANNEL", "stable")
+
+
+def last_checked():
+    """When the update lists were last refreshed (apt-get update), as a time, or None."""
+    stamps = [os.path.getmtime(p) for p in glob.glob("/var/lib/apt/lists/*Release")]
+    return max(stamps) if stamps else None
+
+
+def pending_updates():
+    """What "Update Now" would do, worked out without root (apt-get -s simulates).
+    -> [{"name", "old", "new", "origin"}], including new packages an update brings in."""
+    code, out, err = run(["apt-get", "-s", "-q", "full-upgrade"], 60)
+    if code != 0:
+        raise RuntimeError((err or out).strip().splitlines()[-1] if (err or out).strip() else "apt-get failed")
+    plan = []
+    for line in out.splitlines():
+        m = re.match(r"Inst (\S+) (?:\[(\S+)\] )?\((\S+) (.*?) \[", line)
+        if m:
+            plan.append({"name": m.group(1), "old": m.group(2), "new": m.group(3), "origin": m.group(4)})
+    return plan
+
+
+def download_size(plan):
+    if not plan:
+        return 0
+    _, out, _ = run(["apt-cache", "show", "--no-all-versions"] + [f"{p['name']}={p['new']}" for p in plan], 30)
+    return sum(int(m) for m in re.findall(r"^Size: (\d+)", out, re.M))
+
+
+def whats_new(version):
+    """The change list GlassOS's build put in the package description (" * ..." lines)."""
+    _, out, _ = run(["apt-cache", "show", f"glassos-desktop={version}"], 15)
+    return [l.strip()[2:] for l in out.splitlines() if l.startswith(" * ")]
+
+
+def human_size(n):
+    for unit in ("bytes", "KB", "MB", "GB"):
+        if n < 1000 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit in ("bytes", "KB") else f"{n:.1f} {unit}"
+        n /= 1000
+
+
+class UpdatesPage(Page):
+    title, icon = "Software Update", "system-software-update-symbolic"
+
+    def __init__(self, win):
+        super().__init__(win)
+        self.header("Software Update", "GlassOS and the Debian system underneath it (security fixes, the Linux "
+                    "kernel, drivers and apps) update together. Nothing is downloaded or installed until you say so.")
+        info = build_info()
+        top = ui.card()
+        row = hbox(14)
+        logo = Gtk.Image.new_from_file("/usr/share/glassos/logo.png")
+        logo.set_pixel_size(48)
+        row.append(logo)
+        t = vbox(2)
+        t.set_hexpand(True)
+        t.set_valign(Gtk.Align.CENTER)
+        rel = info.get("GLASSOS_RELEASE") or info.get("GLASSOS_VERSION", "")
+        t.append(label(f"GlassOS {rel}", "card-title"))
+        chan = update_channel()
+        t.append(label(f"Build {info.get('GLASSOS_VERSION', '?')} · "
+                       + ("test builds (every change, as soon as it's made)" if chan == "dev" else f"{chan} releases"),
+                       "dim small"))
+        self.checked = label("", "dim small")
+        t.append(self.checked)
+        row.append(t)
+        self.check_btn = ui.button("Check for Updates", self.check, "pill accent")
+        self.check_btn.set_valign(Gtk.Align.CENTER)
+        row.append(self.check_btn)
+        top.append(row)
+        self.status = label("", "small", wrap=True)
+        top.append(self.status)
+        self.body.append(top)
+
+        self.live = os.path.isdir("/run/live/medium")
+        if self.live:
+            self.body.append(label("You're running GlassOS from the USB stick, so updates would be gone the next time "
+                                   "it starts. Install GlassOS to keep them.", "small warn", wrap=True))
+
+        self.list_card = ui.card()
+        self.list_card.set_visible(False)
+        self.body.append(self.list_card)
+        self.plan = []
+        self.busy = False
+
+    def refresh(self):
+        t = last_checked()
+        if t:
+            day = time.strftime("%b %-d", time.localtime(t))
+            today = time.strftime("%b %-d")
+            when = ("today" if day == today else f"on {day}") + time.strftime(" at %-I:%M %p", time.localtime(t))
+            self.checked.set_text(f"Last checked {when}")
+        else:
+            self.checked.set_text("Not checked yet")
+
+    # ---- checking
+    def check(self):
+        if self.busy:
+            return
+        self.busy = True
+        self.check_btn.set_sensitive(False)
+        self.status.set_text("Checking for updates…")
+        self.list_card.set_visible(False)
+
+        def work():
+            r = subprocess.run(["pkexec", UPDATES_CHECK], capture_output=True, text=True, timeout=300)
+            if r.returncode in (126, 127):
+                return "cancelled", None
+            # apt-get update says "W:"/"E:" for servers it couldn't reach; it still uses the rest
+            problems = [l for l in (r.stdout + r.stderr).splitlines() if l.startswith(("E:", "Err:"))]
+            plan = pending_updates()
+            return problems, plan
+
+        bg(work, self.checked_done)
+
+    def checked_done(self, res):
+        self.busy = False
+        self.check_btn.set_sensitive(True)
+        self.refresh()
+        if isinstance(res, Exception):
+            self.status.set_text(f"Couldn't check for updates: {res}")
+            return
+        problems, plan = res
+        if problems == "cancelled":
+            self.status.set_text("")
+            return
+        self.plan = plan
+        note = ""
+        if problems:
+            note = " Some update servers couldn't be reached (is the internet connected?), so this may not be everything."
+        if not plan:
+            self.status.set_text("GlassOS is up to date." + note)
+            return
+        self.status.set_text(note.strip())
+        self.show_plan(plan)
+
+    def show_plan(self, plan):
+        c = self.list_card
+        ui.clear(c)
+        c.set_visible(True)
+        n = len(plan)
+        head = hbox(10)
+        t = vbox(2)
+        t.set_hexpand(True)
+        t.append(label(f"{n} update{'s' if n != 1 else ''} available", "card-title"))
+        self.size_lbl = label("", "dim small")
+        t.append(self.size_lbl)
+        head.append(t)
+        self.go_btn = ui.button("Update Now", self.install, "pill accent")
+        self.go_btn.set_valign(Gtk.Align.CENTER)
+        self.go_btn.set_sensitive(not self.live)
+        head.append(self.go_btn)
+        c.append(head)
+        bg(lambda: download_size(plan), lambda s: self.size_lbl.set_text(
+            f"{human_size(s)} to download" if isinstance(s, int) and s else ""))
+
+        glass = [p for p in plan if p["name"] == "glassos-desktop"]
+        kernel = [p for p in plan if p["name"].startswith("linux-image")]
+        security = [p for p in plan if p not in glass + kernel and "Security" in p["origin"]]
+        other = [p for p in plan if p not in glass + kernel + security]
+        if glass:
+            g = glass[0]
+            box = vbox(4, "row")
+            box.append(label(f"GlassOS {g['new']}", "card-title"))
+            notes = vbox(2)
+            box.append(notes)
+            c.append(box)
+
+            def show_notes(lines):
+                if isinstance(lines, list) and lines:
+                    for l in lines[:12]:
+                        notes.append(label(f"•  {l}", "small", wrap=True))
+                else:
+                    notes.append(label("Improvements to GlassOS's desktop and apps.", "dim small"))
+            bg(lambda: whats_new(g["new"]), show_notes)
+        if kernel:
+            c.append(ui.setting_row("New Linux kernel", f"{kernel[0]['new']}. Takes effect after a restart.",
+                                    label("", "dim small")))
+        for title, group, sub in (("Security fixes", security, "Fixes for known security problems, from Debian."),
+                                  ("System and apps", other, "Bug fixes for the software GlassOS is built on.")):
+            if not group:
+                continue
+            exp = Gtk.Expander(label=f"{title} ({len(group)})")
+            inner = vbox(2)
+            inner.append(label(sub, "dim small", wrap=True))
+            for p in group:
+                inner.append(label(f"{p['name']}  {p['old'] or 'new'} → {p['new']}", "mono dim", ellipsize=True))
+            exp.set_child(inner)
+            c.append(exp)
+        self.bar = Gtk.ProgressBar()
+        self.bar.set_visible(False)
+        c.append(self.bar)
+        self.step = label("", "dim small", ellipsize=True)
+        c.append(self.step)
+
+    # ---- installing
+    def install(self):
+        if self.busy:
+            return
+        self.busy = True
+        self.go_btn.set_sensitive(False)
+        self.check_btn.set_sensitive(False)
+        self.bar.set_visible(True)
+        self.bar.set_fraction(0)
+        self.step.set_text("Waiting for permission…")
+        restart = any(p["name"].startswith(RESTART_FOR) for p in self.plan)
+
+        def work():
+            p = subprocess.Popen(["pkexec", UPDATES_INSTALL], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 text=True, bufsize=1)
+            tail = []
+            for line in p.stdout:
+                line = line.rstrip()
+                parts = line.split(":", 3)
+                if parts[0] in ("dlstatus", "pmstatus") and len(parts) == 4:
+                    try:
+                        pct = float(parts[2])
+                    except ValueError:
+                        continue
+                    frac = pct / 100 * 0.35 if parts[0] == "dlstatus" else 0.35 + pct / 100 * 0.65
+                    GLib.idle_add(self.progress, frac, parts[3])
+                elif line:
+                    tail = (tail + [line])[-6:]
+            return p.wait(), tail
+
+        def done(res):
+            self.busy = False
+            self.check_btn.set_sensitive(True)
+            if isinstance(res, Exception):
+                self.step.set_text(f"Couldn't install the updates: {res}")
+                self.go_btn.set_sensitive(True)
+                return
+            code, tail = res
+            if code in (126, 127):
+                self.step.set_text("Nothing was installed: an administrator's password is needed.")
+                self.bar.set_visible(False)
+                self.go_btn.set_sensitive(True)
+                return
+            if code != 0:
+                err = [l for l in tail if l.startswith("E:")] or tail
+                self.step.set_text("The update didn't finish: " + (err[-1] if err else f"error {code}") +
+                                   " Nothing you had is lost; try again, and if it keeps failing, restart first.")
+                self.step.set_wrap(True)
+                self.go_btn.set_sensitive(True)
+                return
+            self.bar.set_fraction(1)
+            self.plan = []
+            ui.clear(self.list_card)
+            box = vbox(10)
+            box.append(label("Updates installed.", "card-title"))
+            if restart:
+                box.append(label("Restart to finish: the new version of GlassOS (or Linux) starts then.", "dim small",
+                                 wrap=True))
+                row = hbox(8)
+                row.append(ui.button("Restart Now", lambda: spawn(["glass-power", "restart"]), "pill accent"))
+                row.append(ui.button("Later", lambda: self.list_card.set_visible(False)))
+                box.append(row)
+            self.list_card.append(box)
+            self.status.set_text("")
+            self.refresh()
+
+        bg(work, done)
+
+    def progress(self, frac, text):
+        self.bar.set_fraction(max(self.bar.get_fraction(), min(1.0, frac)))
+        self.step.set_text(text)
+        return False
+
+
 # --------------------------------------------------------------------------- About
 class AboutPage(Page):
     title, icon = "About", "help-about-symbolic"
@@ -1429,7 +1728,7 @@ class AboutPage(Page):
         hero.append(logo)
         t = vbox(2)
         t.set_valign(Gtk.Align.CENTER)
-        t.append(label(f"GlassOS {b.get('GLASSOS_VERSION', '')}", "page-title"))
+        t.append(label(f"GlassOS {b.get('GLASSOS_RELEASE') or b.get('GLASSOS_VERSION', '')}", "page-title"))
         t.append(label(f"“{b.get('GLASSOS_CODENAME', '')}” · built on Debian {s.get('debian', '')}", "dim"))
         hero.append(t)
         self.body.append(hero)
@@ -1440,15 +1739,15 @@ class AboutPage(Page):
         self.body.append(c)
         row = hbox(8)
         row.append(ui.button("What's using my computer", lambda: spawn(["glass-launch", "glass-lens"]), "pill accent"))
-        row.append(ui.button("Software updates", lambda: spawn(["glass-launch", "foot", "--title", "Software Updates",
-                                                                "-e", "glass-update"])))
+        row.append(ui.button("Software Update", lambda: self.win.show_page("updates")))
         row.append(ui.button("Everything that's installed", lambda: spawn(["glass-launch", "glass-lens", "--page", "about"])))
         self.body.append(row)
 
 
 PAGES = [("network", NetworkPage), ("bluetooth", BluetoothPage), ("displays", DisplaysPage), ("sound", SoundPage),
          ("appearance", AppearancePage), ("input", InputPage), ("time", TimePage), ("power", PowerPage),
-         ("privacy", PrivacyPage), ("users", UsersPage), ("about", AboutPage)]
+         ("privacy", PrivacyPage), ("users", UsersPage), ("updates", UpdatesPage),
+         ("about", AboutPage)]
 
 
 class SettingsWindow(Gtk.ApplicationWindow):

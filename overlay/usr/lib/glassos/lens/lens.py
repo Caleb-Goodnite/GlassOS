@@ -1257,7 +1257,7 @@ class AboutPage(Page):
         self.body.append(hero)
         row = hbox(8)
         row.append(button("Check for updates…", lambda: run_bg(
-            ["glass-launch", "foot", "--title", "Software Updates", "-e", "glass-update"]), "pill accent"))
+            ["glass-launch", "glass-settings", "--page", "updates"]), "pill accent"))
         row.append(button("Open the terminal", lambda: run_bg(["glass-launch", "foot"])))
         self.body.append(row)
 

@@ -1,0 +1,6 @@
+#!/bin/sh
+# glassos-desktop: apply system-wide GlassOS settings (services, app names, caches, update source...)
+set -e
+if [ "$1" = configure ]; then
+  /usr/lib/glassos/configure-system
+fi

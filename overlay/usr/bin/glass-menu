@@ -22,7 +22,7 @@ case "$choice" in
   *Settings*)    exec glass-launch glass-settings ;;
   *"Sound Packs"*) exec glass-launch glass-lens --page sounds ;;
   *Wallpaper*)   exec glass-launch glass-settings --page appearance ;;
-  *Updates*)     exec glass-launch foot --title "Software Updates" -e glass-update ;;
+  *Updates*)     exec glass-launch glass-settings --page updates ;;
   *"App Store"*) exec glass-launch glass-store ;;
   *Help*)        exec glass-launch glass-help ;;
   *Install*)     exec glass-launch foot --title "Install GlassOS" -e sudo glass-install ;;

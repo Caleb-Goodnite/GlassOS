@@ -1,0 +1,189 @@
+#!/bin/bash
+# Applies GlassOS's system-wide settings: identity, services, admin rules, app names, caches,
+# boot splash, and where updates come from. Runs when the ISO is built and after every GlassOS
+# update (the glassos-desktop package runs it), so it is safe to run any number of times.
+# No "set -e": one step failing must not stop an update halfway. Each step reports its own trouble.
+set -uo pipefail
+export DEBIAN_FRONTEND=noninteractive
+# shellcheck source=/dev/null
+. /usr/share/glassos/build-info
+GLASSOS_RELEASE="${GLASSOS_RELEASE:-$GLASSOS_VERSION}"
+
+say() { printf '  - %s\n' "$*"; }
+
+say "identity (os-release)"
+if ! dpkg-divert --list /usr/lib/os-release | grep -q glassos; then
+  dpkg-divert --package glassos --divert /usr/lib/os-release.debian --rename --add /usr/lib/os-release >/dev/null
+fi
+DEBIAN_VERSION="$(cat /etc/debian_version)"
+cat > /usr/lib/os-release <<EOF
+PRETTY_NAME="GlassOS $GLASSOS_RELEASE ($GLASSOS_CODENAME)"
+NAME="GlassOS"
+VERSION_ID="$GLASSOS_RELEASE"
+VERSION="$GLASSOS_RELEASE ($GLASSOS_CODENAME)"
+BUILD_ID=$GLASSOS_VERSION
+VERSION_CODENAME=$DEBIAN_SUITE
+ID=glassos
+ID_LIKE=debian
+DEBIAN_VERSION_FULL=$DEBIAN_VERSION
+LOGO=glassos
+EOF
+ln -sf ../usr/lib/os-release /etc/os-release
+for f in /etc/issue /etc/issue.net; do
+  dpkg-divert --list "$f" | grep -q glassos || dpkg-divert --package glassos --divert "$f.debian" --rename --add "$f" >/dev/null
+done
+printf 'GlassOS %s \\n \\l\n\n' "$GLASSOS_RELEASE" > /etc/issue
+printf 'GlassOS %s\n' "$GLASSOS_RELEASE" > /etc/issue.net
+
+say "admin rules (sounds, Glass Lens, camera switch)"
+cat > /etc/sudoers.d/glassos-tools <<'EOF'
+# Lets any admin user (group "sudo") do these things without typing a password:
+#  - set the boot sound from a sound pack (the script only accepts audio files from a pack folder)
+#  - list which program owns each network connection, so Glass Lens can name system services
+#  - switch the camera off and on (Settings > Privacy & Security)
+%sudo ALL=(root) NOPASSWD: /usr/bin/glass-soundpack set-boot-file *
+%sudo ALL=(root) NOPASSWD: /usr/bin/ss -H -tunap
+%sudo ALL=(root) NOPASSWD: /usr/bin/glass-privacy camera off, /usr/bin/glass-privacy camera on
+EOF
+chmod 0440 /etc/sudoers.d/glassos-*
+visudo -cq || { echo 'GlassOS admin rules failed the sudoers check; leaving them out' >&2; rm -f /etc/sudoers.d/glassos-tools; }
+
+say "services"
+systemctl enable NetworkManager.service greetd.service nftables.service glassos-boot-sound.service \
+  systemd-timesyncd.service bluetooth.service tlp.service >/dev/null 2>&1
+# Bluetooth radio stays off until you switch it on in Settings
+if [ -f /etc/bluetooth/main.conf ]; then
+  sed -i -e 's/^#\?AutoEnable *=.*/AutoEnable=false/' /etc/bluetooth/main.conf
+  grep -q '^AutoEnable=false' /etc/bluetooth/main.conf || printf '\n[Policy]\nAutoEnable=false\n' >> /etc/bluetooth/main.conf
+fi
+systemctl set-default graphical.target >/dev/null
+# the login screen remembers who logged in last (just the username)
+install -d -m 0755 -o _greetd -g _greetd /var/cache/glass-greeter
+# the login screen needs the GPU and input devices like any desktop
+for g in video render input; do getent group "$g" >/dev/null && usermod -aG "$g" _greetd; done
+# "Updates only when you ask": no background downloads or installs
+systemctl disable apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
+cat > /etc/apt/apt.conf.d/20glassos-no-auto <<'EOF'
+// GlassOS: nothing is downloaded or installed unless you ask (GlassOS menu > Software Updates).
+APT::Periodic::Enable "0";
+APT::Periodic::Update-Package-Lists "0";
+APT::Periodic::Unattended-Upgrade "0";
+EOF
+# the sound daemon starts with the desktop (session-start), not from a target
+systemctl --global disable waybar.service mako.service hypridle.service foot-server.service >/dev/null 2>&1 || true
+# a crashed graphics stack shouldn't leave you staring at a black screen: text login on tty1-6 stays
+systemctl enable getty@tty1.service >/dev/null 2>&1 || true
+
+say "trimming files nobody needs (and keeping them out on updates)"
+cat > /etc/dpkg/dpkg.cfg.d/50glassos-trim <<'EOF'
+# GlassOS uses one cursor and one icon theme; the variants are left out.
+path-exclude=/usr/share/icons/Bibata-Modern-Amber/*
+path-exclude=/usr/share/icons/Bibata-Modern-Classic/*
+path-exclude=/usr/share/icons/Bibata-Original-*/*
+path-exclude=/usr/share/icons/Papirus-Light/*
+path-exclude=/usr/share/icons/ePapirus*/*
+EOF
+rm -rf /usr/share/icons/Bibata-Modern-Amber /usr/share/icons/Bibata-Modern-Classic \
+       /usr/share/icons/Bibata-Original-* /usr/share/icons/Papirus-Light /usr/share/icons/ePapirus*
+printf '[Icon Theme]\nInherits=Bibata-Modern-Ice\n' > /usr/share/icons/default/index.theme
+
+say "friendly app names in the launcher, and hiding helper entries"
+install -d /usr/local/share/applications
+rename_app() {  # rename_app <desktop-id> <new name>
+  local src="/usr/share/applications/$1" dst="/usr/local/share/applications/$1"
+  [ -f "$src" ] || return 0
+  sed -e "0,/^Name=.*/s//Name=$2/" -e '/^Name\[/d' "$src" > "$dst"
+}
+rename_app foot.desktop "Terminal"
+rename_app thunar.desktop "Files"
+rename_app org.xfce.mousepad.desktop "Text Editor"
+rename_app imv.desktop "Image Viewer"
+rename_app firefox-esr.desktop "Firefox"
+for id in thunar-bulk-rename thunar-settings foot-server footclient imv-dir python3.13 python3 \
+          org.freedesktop.Xwayland org.xfce.mousepad-settings pulsemixer nm-connection-editor; do
+  [ -f "/usr/share/applications/$id.desktop" ] || continue
+  printf '[Desktop Entry]\nType=Application\nName=%s\nExec=true\nNoDisplay=true\n' "$id" \
+    > "/usr/local/share/applications/$id.desktop"
+done
+
+say "caches (schemas, fonts, icons, apps)"
+# Debian keeps the schema compiler inside libglib (the -bin package isn't needed)
+"$(ls /usr/lib/*/glib-2.0/glib-compile-schemas | head -n1)" /usr/share/glib-2.0/schemas
+fc-cache -f >/dev/null
+for t in /usr/share/icons/hicolor /usr/share/icons/Papirus /usr/share/icons/Papirus-Dark; do
+  [ -d "$t" ] && gtk-update-icon-cache -qf "$t" || true
+done
+update-desktop-database -q /usr/share/applications /usr/local/share/applications || true
+
+say "Firefox privacy policies"
+install -d /usr/lib/firefox-esr/distribution /etc/firefox-esr/policies
+install -m644 /usr/share/glassos/firefox/policies.json /usr/lib/firefox-esr/distribution/policies.json
+install -m644 /usr/share/glassos/firefox/policies.json /etc/firefox-esr/policies/policies.json
+
+say "system sound theme (so apps use the GlassOS sounds from the first boot)"
+python3 - <<'EOF'
+import sys
+sys.path.insert(0, "/usr/lib/glassos")
+import glasssound as g
+n = g.build_sound_theme(None, "/usr/share/sounds/glassos")
+print(f"    {n} sounds linked")
+EOF
+
+say "boot splash"
+# ShowDelay=1 (and plymouth.splash-delay=1 on the kernel line): with no delay, the splash
+# sometimes froze on its first frame on virtio-gpu and held up the boot for over a minute.
+plymouth-set-default-theme glassos
+cat > /etc/plymouth/plymouthd.conf <<'EOF'
+[Daemon]
+Theme=glassos
+ShowDelay=1
+DeviceTimeout=8
+EOF
+# simpledrm/virtio/efi framebuffers must be in the initramfs for the splash to show early
+grep -q '^FRAMEBUFFER=y' /etc/initramfs-tools/conf.d/splash 2>/dev/null || \
+  echo FRAMEBUFFER=y > /etc/initramfs-tools/conf.d/splash
+cat > /etc/initramfs-tools/modules <<'EOF'
+# GPU drivers loaded early so the boot splash and desktop come up at full resolution
+virtio_gpu
+EOF
+
+# Rebuild the boot splash into the initramfs only when it changed (it takes a while). The ISO
+# build does that once itself (GLASSOS_BUILD=1).
+splash_sum="$(cat /usr/share/plymouth/themes/glassos/* /etc/plymouth/plymouthd.conf 2>/dev/null | sha256sum | cut -d' ' -f1)"
+install -d /var/lib/glassos
+if [ "$(cat /var/lib/glassos/splash.sha256 2>/dev/null)" != "$splash_sum" ]; then
+  [ -n "${GLASSOS_BUILD:-}" ] || update-initramfs -u >/dev/null 2>&1 || true
+  echo "$splash_sum" > /var/lib/glassos/splash.sha256
+fi
+# installed systems keep their boot menu theme in /boot (the installer puts it there)
+if [ -d /boot/grub/themes/glassos ]; then
+  cp -r /usr/share/glassos/grub-theme/. /boot/grub/themes/glassos/
+fi
+
+# dpkg keeps the old copy of a settings file it replaced (*.dpkg-old); in /etc/skel those would be
+# copied into every new account
+find /etc/skel \( -name '*.dpkg-old' -o -name '*.dpkg-dist' -o -name '*.dpkg-new' \) -delete 2>/dev/null
+
+say "software updates"
+# GlassOS's own update repository, next to Debian's. Signed: apt refuses anything that isn't
+# signed with the GlassOS key in /usr/share/keyrings.
+KEY=/usr/share/keyrings/glassos-archive-keyring.gpg
+CHANNEL="$(sed -n 's/^channel *= *//p' /etc/glassos/updates.conf 2>/dev/null || true)"
+CHANNEL="${CHANNEL:-${UPDATE_CHANNEL:-stable}}"
+if [ -s "$KEY" ] && [ -n "${UPDATE_URL:-}" ]; then
+  cat > /etc/apt/sources.list.d/glassos.sources <<EOF
+# GlassOS updates, "$CHANNEL" channel (set in /etc/glassos/updates.conf)
+Types: deb
+URIs: $UPDATE_URL
+Suites: $CHANNEL
+Components: main
+Signed-By: $KEY
+EOF
+fi
+# The window title bars (the hyprbars plugin) only load into the exact Hyprland they were built
+# for, so Hyprland and its libraries are held at that version. A GlassOS update moves them together.
+if [ -s /usr/lib/glassos/hyprland/libhyprbars.so ]; then
+  # shellcheck disable=SC2046
+  apt-mark hold $(dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'hyprland' 'libhypr*' 'libaquamarine*' 2>/dev/null |
+    awk '$1 == "ii" { print $2 }') >/dev/null 2>&1 || true
+fi

@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
 Name=Software Updates
-Comment=Check for and install updates, only when you choose to
-Exec=foot --title "Software Updates" -e glass-update
+Comment=Update GlassOS, security fixes and apps, only when you choose to
+Exec=glass-launch glass-settings --page updates
 Icon=system-software-update
 Terminal=false
 Categories=System;Settings;
