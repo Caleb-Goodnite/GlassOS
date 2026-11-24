@@ -296,8 +296,8 @@ local press = nil
 hl.bind("mouse:272", function()
     local w = hl.get_active_window()
     local x, y
-    if w then x, y = vec(w.at) end   -- (not "w and vec(...)": that would keep only x)
-    press = w and x and { address = w.address, x = x, y = y } or nil
+    if w then x, y = vec(w.at) end   -- (`w and vec()` would keep only x)
+    press = w and { address = w.address, x = x, y = y } or nil
 end, { non_consuming = true, ignore_mods = true })
 
 hl.bind("mouse:272", function()
