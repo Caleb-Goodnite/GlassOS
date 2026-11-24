@@ -131,6 +131,10 @@ def close_window(address):
 
 def listen_events(callback):
     """Call callback() on window open/close/focus events (Hyprland socket2)."""
+    def once():
+        callback()
+        return False   # an idle callback that returns True runs again and again, using a whole core
+
     def run():
         while True:
             d = hypr_dir()
@@ -141,10 +145,10 @@ def listen_events(callback):
                 for line in f:
                     ev = line.split(">>", 1)[0]
                     if ev in ("openwindow", "closewindow", "activewindowv2", "movewindowv2", "windowtitlev2"):
-                        GLib.idle_add(callback)
+                        GLib.idle_add(once)
             except Exception:
                 pass
-            GLib.idle_add(callback)
+            GLib.idle_add(once)
             threading.Event().wait(2.0)
 
     threading.Thread(target=run, daemon=True).start()

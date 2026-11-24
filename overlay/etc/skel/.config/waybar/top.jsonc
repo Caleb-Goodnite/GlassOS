@@ -49,7 +49,7 @@
     "tooltip-format-wifi": "{essid} ({signalStrength}%)\n{ipaddr}",
     "tooltip-format-ethernet": "Wired: {ifname}\n{ipaddr}",
     "tooltip-format-disconnected": "Not connected",
-    "on-click": "glass-launch foot --title Network -e nmtui"
+    "on-click": "glass-launch glass-settings --page network"
   },
   "pulseaudio": {
     "format": "{icon}",
@@ -59,7 +59,7 @@
     "scroll-step": 0,
     "on-scroll-up": "glass-volume up",
     "on-scroll-down": "glass-volume down",
-    "on-click": "glass-launch foot --title Sound -e pulsemixer",
+    "on-click": "glass-launch glass-settings --page sound",
     "on-click-right": "glass-volume mute"
   },
   "battery": {

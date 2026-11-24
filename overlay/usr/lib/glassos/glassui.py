@@ -241,6 +241,25 @@ def hypr(cmd):
         return ""
 
 
+def work_areas():
+    """Each screen's box (x0, y0, x1, y1) a window has to stay inside: the whole screen, minus the
+    top bar and a small gap under it, plus where the screen itself starts (its top edge).
+    Hyprland's config applies the same box when you let go of a window."""
+    out = []
+    try:
+        mons = json.loads(hypr("j/monitors"))
+    except ValueError:
+        return out
+    for m in mons:
+        s = m.get("scale") or 1
+        w, h = m["width"] / s, m["height"] / s
+        if m.get("transform", 0) % 2:
+            w, h = h, w
+        top = (m.get("reserved") or [0, 0, 0, 0])[1]
+        out.append((m["x"], m["y"] + (top + 6 if top else 0), m["x"] + w, m["y"] + h, m["y"]))
+    return out
+
+
 _INTERACTIVE = (Gtk.Button, Gtk.Editable, Gtk.DropDown, Gtk.MenuButton, Gtk.Switch, Gtk.Scale, Gtk.CheckButton)
 
 
@@ -284,7 +303,7 @@ def drag_by_titlebar(win, header):
         if not act or act.get("pid") != os.getpid() or not act.get("floating", True):
             return
         st.update(addr=act["address"], dx=cur["x"] - act["at"][0], dy=cur["y"] - act["at"][1],
-                  last=(act["at"][0], act["at"][1]), start=now)
+                  last=(act["at"][0], act["at"][1]), start=now, size=act["size"], areas=work_areas())
         if st["timer"]:
             GLib.source_remove(st["timer"])
         st["timer"] = GLib.timeout_add(16, tick)
@@ -297,7 +316,13 @@ def drag_by_titlebar(win, header):
             cur = json.loads(hypr("j/cursorpos"))
         except ValueError:
             return True
-        pos = (int(cur["x"] - st["dx"]), int(cur["y"] - st["dy"]))
+        x, y = cur["x"] - st["dx"], cur["y"] - st["dy"]
+        for x0, y0, x1, y1, screen_top in st["areas"]:   # stop at the edges of the screen the pointer is on
+            if x0 <= cur["x"] < x1 and screen_top <= cur["y"] < y1:
+                x = max(x0, min(x, x1 - st["size"][0]))
+                y = max(y0, min(y, y1 - st["size"][1]))
+                break
+        pos = (int(x), int(y))
         if pos != st["last"]:
             st["last"] = pos
             hypr(f'dispatch hl.dsp.window.move({{ x = {pos[0]}, y = {pos[1]}, window = "address:{st["addr"]}" }})')
