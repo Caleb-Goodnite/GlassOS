@@ -426,6 +426,14 @@ class NetSampler:
     def __init__(self):
         self.prev = None
         self.prev_t = None
+        self.addrs = {}   # name -> (address, when it was read)
+
+    def addr(self, name, t):
+        # an address rarely changes, and reading it starts a program, so look again every 30 s
+        a = self.addrs.get(name)
+        if a is None or t - a[1] > 30:
+            a = self.addrs[name] = (iface_addr(name), t)
+        return a[0]
 
     def sample(self):
         now = {}
@@ -446,7 +454,7 @@ class NetSampler:
                 rr = (rx - self.prev[k][0]) / dt
                 tr = (tx - self.prev[k][1]) / dt
             res[k] = {"rx_rate": max(0, rr), "tx_rate": max(0, tr), "rx_total": rx, "tx_total": tx,
-                      "addr": iface_addr(k), "kind": iface_kind(k)}
+                      "addr": self.addr(k, t), "kind": iface_kind(k)}
         self.prev, self.prev_t = now, t
         return res
 
@@ -663,11 +671,19 @@ def batteries():
     return out
 
 
+_HYPR_VERSION = None
+
+
+def uptime():
+    """Seconds since the computer started, from /proc/uptime."""
+    return float(read("/proc/uptime", "0").split()[0])
+
+
 def system_summary():
     u = os.uname()
     boot = "UEFI" if os.path.isdir("/sys/firmware/efi") else "BIOS (legacy)"
     live = os.path.isdir("/run/live/medium")
-    up = float(read("/proc/uptime", "0").split()[0])
+    up = uptime()
     os_rel = {}
     for line in read("/etc/os-release", "").splitlines():
         if "=" in line:
@@ -678,12 +694,14 @@ def system_summary():
         if "=" in line:
             k, v = line.split("=", 1)
             build[k] = v
-    hypr = ""
-    try:
-        hypr = subprocess.run(["dpkg-query", "-W", "-f=${Version}", "hyprland"], capture_output=True,
-                              text=True, timeout=2).stdout.split("+")[0]
-    except Exception:
-        pass
+    global _HYPR_VERSION
+    if _HYPR_VERSION is None:
+        try:
+            _HYPR_VERSION = subprocess.run(["dpkg-query", "-W", "-f=${Version}", "hyprland"], capture_output=True,
+                                           text=True, timeout=2).stdout.split("+")[0]
+        except Exception:
+            _HYPR_VERSION = ""
+    hypr = _HYPR_VERSION
     product = (read("/sys/class/dmi/id/sys_vendor", "") + " " + read("/sys/class/dmi/id/product_name", "")).strip()
     if not product:
         product = read("/proc/device-tree/model", "").strip("\x00")

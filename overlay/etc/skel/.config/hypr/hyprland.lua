@@ -90,8 +90,8 @@ hl.config({
     },
 
     decoration = {
-        rounding       = 16,
-        rounding_power = 3.0,      -- superellipse corners
+        rounding       = 20,
+        rounding_power = 4.0,      -- squircle corners: the curve eases in, unlike a circle
         active_opacity   = 1.0,
         inactive_opacity = 1.0,
 
@@ -190,6 +190,77 @@ hl.window_rule({
     match    = { class = ".*" },
     max_size = "monitor_w*0.96 monitor_h*0.86",
 })
+
+-- Keep windows on the screen. When you let go of the mouse after moving or resizing a window
+-- (title bar, Super+drag or an edge), it slides back so all of it is on screen and its top
+-- sits below the top bar, so its title bar can always be grabbed. A window bigger than the
+-- screen shrinks to fit. Clicking a window that's already out of place fixes it too.
+local function vec(v)
+    if type(v) ~= "table" then return nil end
+    return v.x or v[1], v.y or v[2]
+end
+
+local function keep_on_screen(w)
+    if not w or not w.floating or w.fullscreen ~= 0 or not w.monitor then return end
+    local m = w.monitor
+    local mw, mh = m.width / m.scale, m.height / m.scale
+    if m.transform % 2 == 1 then mw, mh = mh, mw end
+    local left, top, right, bottom = m.x, m.y, m.x + mw, m.y + mh
+    for _, l in ipairs(hl.get_layers()) do
+        if l.namespace == "waybar" and l.monitor and l.monitor.id == m.id and l.y < m.y + mh / 2 then
+            top = math.max(top, l.y + l.h + 6)
+        end
+    end
+    local x, y = vec(w.at)
+    local ww, wh = vec(w.size)
+    if not x or not ww then return end
+    local nw, nh = math.min(ww, right - left), math.min(wh, bottom - top)
+    if nw ~= ww or nh ~= wh then
+        hl.dispatch(hl.dsp.window.resize({ x = math.floor(nw), y = math.floor(nh), exact = true, window = "address:" .. w.address }))
+    end
+    local nx = math.max(left, math.min(x, right - nw))
+    local ny = math.max(top, math.min(y, bottom - nh))
+    if nx ~= x or ny ~= y then
+        hl.dispatch(hl.dsp.window.move({ x = math.floor(nx), y = math.floor(ny), window = "address:" .. w.address }))
+    end
+end
+
+hl.bind("mouse:272", function() keep_on_screen(hl.get_active_window()) end,
+        { release = true, non_consuming = true, ignore_mods = true })
+
+-- Make full size (the maximize button, or double-clicking a title bar) works like full screen
+-- on a Mac: the window covers the whole screen and the top bar and dock get out of the way. The
+-- app still thinks it's only maximized, so it keeps its title bar and the button to shrink back.
+local function set_fullscreen(addr, internal, client)
+    hl.dispatch(hl.dsp.window.fullscreen_state({ internal = internal, client = client, window = "address:" .. addr }))
+end
+
+-- Hyprland sends no event when the app asks to shrink back, so while a window is full size a
+-- timer checks it 4 times a second; it stops when no window is full size
+local full_size = {}
+local watch
+watch = hl.timer(function()
+    for addr in pairs(full_size) do
+        local w = hl.get_window("address:" .. addr)
+        if not w or w.fullscreen ~= 2 then
+            full_size[addr] = nil                       -- closed, or Super+F took it out
+        elseif w.fullscreen_client == 0 then
+            full_size[addr] = nil                       -- the app asked to shrink back
+            set_fullscreen(addr, 0, 0)
+        end
+    end
+    if next(full_size) == nil then watch:set_enabled(false) end
+end, { timeout = 250, type = "repeat" })
+watch:set_enabled(false)
+
+hl.on("window.fullscreen", function(w)
+    w = w or hl.get_active_window()
+    if w and w.fullscreen == 1 then                     -- the app asked to be maximized
+        set_fullscreen(w.address, 2, 1)
+        full_size[w.address] = true
+        watch:set_enabled(true)
+    end
+end)
 
 -- Frosted glass behind the bar, dock, launcher and notifications
 for _, ns in ipairs({ "waybar", "launcher", "notifications", "glass-dock", "glass-osd" }) do

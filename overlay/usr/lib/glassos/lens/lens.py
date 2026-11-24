@@ -23,7 +23,7 @@ import glassui  # noqa: E402
 import sysinfo as si  # noqa: E402
 
 APP_ID = "os.glass.Lens"
-REFRESH_MS = 2000
+REFRESH_MS = 667   # two-thirds of a second: 1 s felt slow, half a second too busy
 C = {k: v[1] for k, v in si.CATEGORIES.items()}
 
 CSS = """
@@ -197,7 +197,7 @@ def fmt_duration(s):
 class Spark(Gtk.DrawingArea):
     """Rolling line chart."""
 
-    def __init__(self, color, maxlen=90, height=46, maxval=None, second=None):
+    def __init__(self, color, maxlen=180_000 // REFRESH_MS, height=46, maxval=None, second=None):   # 3 minutes
         super().__init__()
         self.vals, self.vals2 = [], []
         self.color = rgb(color)
@@ -517,7 +517,7 @@ class OverviewPage(Page):
 
         pies = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True,
                            min_children_per_line=1, max_children_per_line=2, column_spacing=16, row_spacing=16)
-        c = card("Who is using the processor", "Share of the whole CPU over the last 2 seconds.")
+        c = card("Who is using the processor", "Share of the whole CPU, updated every two-thirds of a second.")
         row = hbox(22)
         self.cpu_pie = Donut()
         row.append(self.cpu_pie)
@@ -854,11 +854,6 @@ class NetworkPage(Page):
             child = nxt
 
     def update(self, d):
-        fw = si.firewall_status()
-        self.fw.set_text("On: incoming connections are blocked, everything you start can connect out."
-                         if fw else "Off: incoming connections are not filtered.")
-        self.fw.add_css_class("dim")
-        self.fw_icon.set_text("✓" if fw else "!")
         self._clear(self.iface_box)
         rx = tx = 0
         for name, v in d["net"].items():
@@ -910,8 +905,14 @@ class NetworkPage(Page):
                 pass
             self.listen_box.append(r)
 
+        # these two start programs (systemctl), so they refresh every 8 seconds, not every tick
         if time.monotonic() - self.acct_t > 8:
             self.acct_t = time.monotonic()
+            fw = si.firewall_status()
+            self.fw.set_text("On: incoming connections are blocked, everything you start can connect out."
+                             if fw else "Off: incoming connections are not filtered.")
+            self.fw.add_css_class("dim")
+            self.fw_icon.set_text("✓" if fw else "!")
             acct = si.ip_accounting()
             self._clear(self.acct_box)
             if not acct:
@@ -989,10 +990,11 @@ class HardwarePage(Page):
         self.bat_box = vbox(4)
         self.bat_card.append(self.bat_box)
         self.body.append(self.bat_card)
+        self.slow_t = 0.0
 
     def update(self, d):
         if self.uptime:
-            self.uptime.set_text(fmt_duration(si.system_summary()["uptime"]))
+            self.uptime.set_text(fmt_duration(si.uptime()))
         freqs = si.core_freqs()
         for i, (mt, pl, fl) in enumerate(self.cores):
             v = d["cpu"]["cores"][i] if i < len(d["cpu"]["cores"]) else 0
@@ -1000,6 +1002,11 @@ class HardwarePage(Page):
             pl.set_text(f"{v:.0f}%")
             f = freqs[i] if i < len(freqs) else None
             fl.set_text(f"{f / 1000:.2f} GHz" if f else "")
+        # Graphics, storage, temperatures and battery change slowly, and reading some sensors wakes
+        # the drive or the embedded controller, so they refresh every 10 seconds
+        if time.monotonic() - self.slow_t < 10:
+            return
+        self.slow_t = time.monotonic()
         NetworkPage._clear(self.gpu_box)
         gl = si.gpus()
         if not gl:
@@ -1379,12 +1386,18 @@ class LensWindow(Gtk.ApplicationWindow):
             key = "overview"
         self.stack.set_visible_child_name(key)
         self.sidebar.select_row(self.rows[key])
-        GLib.idle_add(self.tick)
+        GLib.idle_add(self.refresh_now)
 
     def on_row(self, _lb, row):
         if row:
             self.stack.set_visible_child_name(row.key)
-            GLib.idle_add(self.tick)
+            GLib.idle_add(self.refresh_now)
+
+    def refresh_now(self):
+        # Fill a page as soon as it's opened. Returning False matters: tick() returns True to keep
+        # its 2-second timer going, and an idle callback returning True runs nonstop.
+        self.tick()
+        return False
 
     def collect(self):
         cpu = self.cpu.sample()

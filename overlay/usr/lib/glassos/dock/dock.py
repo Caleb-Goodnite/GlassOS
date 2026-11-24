@@ -23,7 +23,17 @@ from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 from gi.repository import Gtk4LayerShell as Layer  # noqa: E402
 
 CONF = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "glassos", "dock.conf")
-ICON_SIZE = 46
+APPEARANCE = os.path.join(os.path.dirname(CONF), "appearance.json")   # Settings > Appearance > Dock size
+SIZES = {"small": 30, "medium": 36, "large": 46}                       # icon size in pixels
+ICON_SIZE = SIZES["medium"]
+
+
+def dock_icon_size():
+    try:
+        with open(APPEARANCE) as f:
+            return SIZES.get(json.load(f).get("dock_size"), SIZES["medium"])
+    except (OSError, ValueError, AttributeError):
+        return SIZES["medium"]
 
 CSS = b"""
 window.glass-dock { background: transparent; }
@@ -131,6 +141,10 @@ def close_window(address):
 
 def listen_events(callback):
     """Call callback() on window open/close/focus events (Hyprland socket2)."""
+    def once():
+        callback()
+        return False   # an idle callback that returns True runs again and again, using a whole core
+
     def run():
         while True:
             d = hypr_dir()
@@ -141,10 +155,10 @@ def listen_events(callback):
                 for line in f:
                     ev = line.split(">>", 1)[0]
                     if ev in ("openwindow", "closewindow", "activewindowv2", "movewindowv2", "windowtitlev2"):
-                        GLib.idle_add(callback)
+                        GLib.idle_add(once)
             except Exception:
                 pass
-            GLib.idle_add(callback)
+            GLib.idle_add(once)
             threading.Event().wait(2.0)
 
     threading.Thread(target=run, daemon=True).start()
@@ -314,17 +328,37 @@ class Dock(Gtk.ApplicationWindow):
         Layer.set_layer(self, Layer.Layer.TOP)
         Layer.set_anchor(self, Layer.Edge.BOTTOM, True)
         Layer.set_keyboard_mode(self, Layer.KeyboardMode.NONE)
-        Layer.set_exclusive_zone(self, 74)
         self.box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         self.box.add_css_class("dock")
         self.set_child(self.box)
         self.pins = read_pins()
         self.items = {}
         self.signature = None
+        self.size_css = Gtk.CssProvider()
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), self.size_css,
+                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+        self.apply_size()
+        # Settings saves appearance.json; pick up a new dock size straight away
+        self.appearance_mon = Gio.File.new_for_path(APPEARANCE).monitor_file(Gio.FileMonitorFlags.NONE, None)
+        self.appearance_mon.connect("changed", lambda *_a: self.apply_size() if dock_icon_size() != ICON_SIZE else None)
         self.refresh()
         listen_events(self.refresh)
         GLib.timeout_add_seconds(3, self.refresh)  # safety net
         Gio.AppInfoMonitor.get().connect("changed", lambda *_: self.rebuild())
+
+    def apply_size(self):
+        global ICON_SIZE
+        ICON_SIZE = dock_icon_size()
+        css = f".dock {{ border-radius: {round((ICON_SIZE + 22) * 0.38)}px; }}"
+        if hasattr(self.size_css, "load_from_string"):
+            self.size_css.load_from_string(css)
+        else:
+            self.size_css.load_from_data(css.encode())
+        # the bar is the icon plus 22 px of padding and dots, with 10 px under it; windows that
+        # are maximized or tiled stop above it
+        Layer.set_exclusive_zone(self, ICON_SIZE + 28)
+        if self.items:
+            self.rebuild()
 
     def toggle_pin(self, app_id):
         if app_id in self.pins:

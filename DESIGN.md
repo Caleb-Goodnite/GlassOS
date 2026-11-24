@@ -48,6 +48,11 @@ Visual language: layered frosted glass over a colourful wallpaper. Dials: **ENER
 | No outer drop shadow on the top bar or dock | Hyprland blurs and darkens everything above 5% alpha behind them, so a soft shadow becomes a hard dark box. The blur alone lifts them off the wallpaper. |
 | Click to focus | Like a Mac: moving the pointer across windows doesn't change which one you're typing in. Scrolling still reaches whatever is under the pointer. |
 | App names in the top bar come from each app's launcher | App Store apps read "Tux Paint", not "org.tuxpaint.Tuxpaint". |
+| Windows can't leave the screen | Owner asked. A window whose title bar is under the top bar can't be grabbed, so letting go of a window slides it back inside the screen, below the top bar. |
+| Maximize hides the top bar and dock | Owner asked for the Mac's full screen: the window gets every pixel, and keeps its title bar so the same button shrinks it back. |
+| Dock size Small / Medium / Large, Medium by default (36 px icons) | Owner found the 46 px dock too big. |
+| Squircle window corners (radius 20, rounding power 4) | The curve eases in instead of starting abruptly like a circle's, which reads as more finished. GTK can only draw circular corners, so cards and buttons inside apps stay circular. |
+| Glass Lens refreshes every two-thirds of a second | Owner's pick: 1 s felt slow, half a second too busy. Sensors that wake hardware or start programs refresh every 8 to 10 seconds. |
 
 ## Writing
 
