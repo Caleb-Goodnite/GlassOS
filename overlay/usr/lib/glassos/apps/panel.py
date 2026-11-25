@@ -4,7 +4,8 @@
   glass-panel wifi       Wi-Fi on/off, the network you're on, known networks, other networks
   glass-panel bluetooth  Bluetooth on/off and your devices
   glass-panel sound      volume, and which speakers or headphones to use
-  glass-panel control    Control Centre: Wi-Fi, Bluetooth, display brightness and sound in one place
+  glass-panel control    Control Centre, laid out like macOS's: Wi-Fi and Bluetooth, Focus (Do Not
+                         Disturb), Capture and Settings tiles, brightness and volume sliders, Now Playing
   glass-panel window     the focused window: Close, Minimize, Full Size, Center (the top bar's app name)
 
 It opens under the mouse pointer and closes when you click anywhere else or press Escape.
@@ -29,6 +30,7 @@ from gi.repository import Gtk4LayerShell as Layer  # noqa: E402
 
 APP_ID = "os.glass.Panel"
 WIDTH = 320
+CC_WIDTH = 340      # the Control Centre is a little wider, for its two columns of modules
 SINK = "@DEFAULT_AUDIO_SINK@"
 
 
@@ -63,6 +65,37 @@ button.dot-btn.on {{ background-image: linear-gradient(180deg, alpha({acc}, 1.0)
         background-image: linear-gradient(180deg, alpha(#ffffff, 0.09), alpha(#ffffff, 0.05));
         {ui.glass_edges(top=0.20, bottom=0.08, side=0.06, sheen=0.08, edge=0.10)} }}
 .sub {{ font-size: 12px; color: alpha(#ffffff, 0.68); }}
+/* Control Centre: a grid of glass modules, like macOS */
+.menu.cc {{ padding: 10px; }}
+.cc-tile {{ border-radius: 16px; padding: 8px;
+           background-image: linear-gradient(180deg, alpha(#ffffff, 0.11), alpha(#ffffff, 0.06));
+           {ui.glass_edges(top=0.22, bottom=0.08, side=0.07, sheen=0.08, edge=0.10)} }}
+.cc-name {{ font-weight: 600; font-size: 13px; }}
+.cc-sub {{ font-size: 11px; color: alpha(#ffffff, 0.60); }}
+.cc-small-name {{ font-size: 11px; font-weight: 600; }}
+button.cc-round {{ min-width: 32px; min-height: 32px; padding: 0; border-radius: 99px; border: none;
+                  background: alpha(#ffffff, 0.16); box-shadow: inset 0 1px alpha(#ffffff, 0.12); color: #fff; }}
+button.cc-round:hover {{ background: alpha(#ffffff, 0.24); }}
+button.cc-round.on {{ background-image: linear-gradient(180deg, alpha({acc}, 1.0), alpha({acc}, 0.85)); }}
+button.cc-cell {{ background: none; border: none; box-shadow: none; border-radius: 11px; padding: 4px;
+                 color: #fff; min-height: 0; }}
+button.cc-cell:hover {{ background: alpha(#ffffff, 0.08); }}
+button.cc-cell:active {{ background: alpha(#ffffff, 0.13); }}
+button.cc-cell:disabled {{ opacity: 0.45; }}
+.cc-art {{ min-width: 40px; min-height: 40px; border-radius: 9px; color: #fff;
+          background-image: linear-gradient(160deg, alpha({acc}, 0.95), alpha({acc}, 0.45)); }}
+button.cc-media {{ background: none; border: none; box-shadow: none; min-width: 30px; min-height: 30px;
+                  padding: 0; border-radius: 99px; color: #fff; }}
+button.cc-media:hover {{ background: alpha(#ffffff, 0.10); }}
+/* the fat pill slider: white fill, white knob, a grey symbol riding in the knob's end */
+scale.pill {{ padding: 0; margin: 2px 0 0 0; }}
+scale.pill trough {{ min-height: 24px; border-radius: 99px; padding: 0; border: none; outline: none;
+                    background: alpha(#ffffff, 0.16); box-shadow: inset 0 1px 2px alpha(#000000, 0.25); }}
+scale.pill highlight {{ min-height: 24px; border-radius: 99px; border: none; background: #ffffff; }}
+scale.pill slider {{ min-width: 24px; min-height: 24px; margin: 0; padding: 0; border-radius: 99px;
+                    border: none; outline: none; background: #ffffff; box-shadow: 0 0 4px alpha(#000000, 0.35); }}
+scale.pill:disabled trough {{ opacity: 0.5; }}
+.pill-icon {{ color: alpha(#000000, 0.55); }}
 .warn {{ color: #ffd479; }}
 .menu entry {{ border-radius: 9px; }}
 """
@@ -416,21 +449,48 @@ class BluetoothView(View):
 
 
 # --------------------------------------------------------------------------- Sound
-def volume_row(panel_view):
-    """speaker button (mute) + slider for the default output."""
-    row = hbox(8, "menu-pad")
-    mute = Gtk.Button()
-    mute.add_css_class("dot-btn")
-    sc = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
+def pill_slider(icon_name, lo, hi):
+    """The Control Centre's fat slider, with its symbol riding in the knob's end.
+    Returns (widget to add, the Gtk.Scale, the symbol)."""
+    ov = Gtk.Overlay()
+    sc = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lo, hi, 1)
     sc.set_draw_value(False)
     sc.set_hexpand(True)
-    row.append(mute)
-    row.append(sc)
+    sc.add_css_class("pill")
+    ov.set_child(sc)
+    im = icon(icon_name, 14)
+    im.add_css_class("pill-icon")
+    im.set_halign(Gtk.Align.START)
+    im.set_valign(Gtk.Align.CENTER)
+    im.set_margin_start(5)
+    im.set_can_target(False)   # clicks go to the slider underneath
+    ov.add_overlay(im)
+    return ov, sc, im
+
+
+def volume_row(panel_view, pill=False):
+    """speaker button (mute) + slider for the default output; or, as a pill, just the slider
+    with the speaker symbol inside it."""
+    if pill:
+        row, sc, sym = pill_slider("audio-volume-high-symbolic", 0, 100)
+        mute = None
+    else:
+        row = hbox(8, "menu-pad")
+        mute = Gtk.Button()
+        mute.add_css_class("dot-btn")
+        sc = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
+        sc.set_draw_value(False)
+        sc.set_hexpand(True)
+        row.append(mute)
+        row.append(sc)
     state = {"muted": False, "quiet": False}
 
     def paint():
         v = sc.get_value()
         name = "muted" if state["muted"] or v == 0 else ("low" if v < 34 else "medium" if v < 67 else "high")
+        if mute is None:
+            sym.set_from_icon_name(f"audio-volume-{name}-symbolic")
+            return
         mute.set_icon_name(f"audio-volume-{name}-symbolic")
         mute.set_tooltip_text("Unmute" if state["muted"] else "Mute")
 
@@ -458,7 +518,8 @@ def volume_row(panel_view):
         paint()
 
     sc.connect("value-changed", changed)
-    mute.connect("clicked", toggle_mute)
+    if mute is not None:
+        mute.connect("clicked", toggle_mute)
     paint()
     return row, lambda: bg(lambda: hw.get_volume(SINK), load)
 
@@ -493,75 +554,152 @@ class SoundView(View):
 
 
 # --------------------------------------------------------------------------- Control Centre
+DND = "do-not-disturb"   # the mako mode that hides notifications (see ~/.config/mako/config)
+
+
+def media_state():
+    """(status, title, artist) of the player playerctl picks, or None when nothing is playing."""
+    rc, out, _ = hw.run(["playerctl", "metadata", "--format", "{{status}}\t{{title}}\t{{artist}}"], 3)
+    if rc != 0 or not out.strip():
+        return None
+    parts = (out.strip().split("\t") + ["", "", ""])[:3]
+    return tuple(parts)
+
+
+def dnd_on():
+    rc, out, _ = hw.run(["makoctl", "mode"], 3)
+    return rc == 0 and DND in out.split()
+
+
 class ControlView(View):
+    """Laid out like macOS's Control Centre: the connections module and Focus side by side, two
+    small shortcut tiles, then Display and Sound sliders and Now Playing across the full width."""
+
     def __init__(self, panel, back=False):
         super().__init__(panel, back)
-        net = vbox(2, "tile")
+        self.set_spacing(10)
+        grid = Gtk.Grid(column_spacing=10, row_spacing=10, column_homogeneous=True)
+
+        net = vbox(2, "cc-tile")
         self.wifi_btn, self.wifi_sub, r = self.toggle_row("network-wireless-symbolic", "Wi-Fi", self.toggle_wifi,
                                                           lambda: panel.show("wifi", back=True))
         net.append(r)
         self.bt_btn, self.bt_sub, r = self.toggle_row("bluetooth-symbolic", "Bluetooth", self.toggle_bt,
                                                       lambda: panel.show("bluetooth", back=True))
         net.append(r)
-        self.append(net)
+        grid.attach(net, 0, 0, 1, 2)
 
-        disp = vbox(4, "tile")
+        focus = vbox(0, "cc-tile")
+        self.dnd_btn, self.dnd_sub, r = self.toggle_row("notifications-disabled-symbolic", "Focus",
+                                                        self.toggle_dnd, self.toggle_dnd)
+        focus.append(r)
+        grid.attach(focus, 1, 0, 1, 1)
+
+        smalls = Gtk.Box(spacing=10, homogeneous=True)
+        smalls.append(self.small_tile("applets-screenshooter-symbolic", "Capture", self.screenshot))
+        smalls.append(self.small_tile("preferences-system-symbolic", "Settings",
+                                      lambda: open_settings(panel, "appearance")))
+        grid.attach(smalls, 1, 1, 1, 1)
+        self.append(grid)
+
+        disp = vbox(4, "cc-tile")
         disp.append(self.tile_head("Display", lambda: open_settings(panel, "displays")))
-        self.bright_row = hbox(8, "menu-pad")
-        sun = dot("display-brightness-symbolic")
-        self.bright = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 1, 100, 1)
-        self.bright.set_draw_value(False)
-        self.bright.set_hexpand(True)
+        self.bright_row, self.bright, _ = pill_slider("display-brightness-symbolic", 1, 100)
         self.bright.connect("value-changed", self.on_bright)
-        self.bright_row.append(sun)
-        self.bright_row.append(self.bright)
         disp.append(self.bright_row)
-        self.bright_note = label("This screen's brightness is set with its own buttons.", "sub menu-pad", wrap=True)
+        self.bright_note = label("This screen's brightness is set with its own buttons.", "cc-sub", wrap=True)
+        self.bright_note.set_margin_start(4)
+        self.bright_note.set_visible(False)   # until we know there's no way to set it
         disp.append(self.bright_note)
         self.append(disp)
 
-        snd = vbox(4, "tile")
+        snd = vbox(4, "cc-tile")
         snd.append(self.tile_head("Sound", lambda: panel.show("sound", back=True)))
-        row, self.load_volume = volume_row(self)
+        row, self.load_volume = volume_row(self, pill=True)
         snd.append(row)
         self.append(snd)
-        self.quiet = False
-        self.wifi_on = self.bt_on = False
 
+        self.append(self.now_playing())
+        self.quiet = False
+        self.wifi_on = self.bt_on = self.dnd = False
+
+    # ---- building blocks
     def toggle_row(self, icon_name, title, on_toggle, on_open):
-        r = hbox(4)
+        """round toggle button + name and state; clicking the words opens the details."""
+        r = hbox(2)
+        r.set_vexpand(True)
         btn = Gtk.Button.new_from_icon_name(icon_name)
-        btn.add_css_class("dot-btn")
+        btn.add_css_class("cc-round")
         btn.set_valign(Gtk.Align.CENTER)
-        btn.set_margin_start(6)
         btn.connect("clicked", lambda *_: on_toggle())
         r.append(btn)
-        right = icon("go-next-symbolic", 12)
-        sub = label("", "sub", ellipsize=True)
+        sub = label("", "cc-sub", ellipsize=True)
         t = vbox(0)
-        t.append(label(title))
+        t.set_valign(Gtk.Align.CENTER)
+        t.append(label(title, "cc-name", ellipsize=True))
         t.append(sub)
-        t.set_hexpand(True)
         opener = Gtk.Button()
-        opener.add_css_class("item")
+        opener.add_css_class("cc-cell")
         opener.set_hexpand(True)
-        inner = hbox(6)
-        inner.append(t)
-        inner.append(right)
-        opener.set_child(inner)
+        opener.set_child(t)
         opener.connect("clicked", lambda *_: on_open())
         r.append(opener)
         return btn, sub, r
 
+    def small_tile(self, icon_name, title, cb):
+        tile = vbox(0, "cc-tile")
+        tile.set_hexpand(True)
+        b = Gtk.Button()
+        b.add_css_class("cc-cell")
+        b.set_vexpand(True)
+        inner = vbox(4)
+        inner.set_valign(Gtk.Align.CENTER)
+        d = dot(icon_name)
+        d.set_halign(Gtk.Align.CENTER)
+        inner.append(d)
+        inner.append(label(title, "cc-small-name", xalign=0.5, ellipsize=True))
+        b.set_child(inner)
+        b.connect("clicked", lambda *_: cb())
+        tile.append(b)
+        return tile
+
     def tile_head(self, title, cb):
-        b = item(cb, title, icon("go-next-symbolic", 12))
-        b.get_child().get_first_child().get_first_child().add_css_class("menu-title")
+        b = Gtk.Button()
+        b.add_css_class("cc-cell")
+        b.set_halign(Gtk.Align.START)
+        b.set_child(label(title, "cc-name"))
+        b.connect("clicked", lambda *_: cb())
         return b
 
+    def now_playing(self):
+        tile = hbox(10, "cc-tile")
+        art = icon("audio-x-generic-symbolic", 20)   # stands in for the album cover
+        art.add_css_class("cc-art")
+        art.set_valign(Gtk.Align.CENTER)
+        tile.append(art)
+        words = vbox(0)
+        words.set_hexpand(True)
+        words.set_valign(Gtk.Align.CENTER)
+        self.np_title = label("Not Playing", "cc-name", ellipsize=True)
+        self.np_artist = label("", "cc-sub", ellipsize=True)
+        self.np_artist.set_visible(False)
+        words.append(self.np_title)
+        words.append(self.np_artist)
+        tile.append(words)
+        self.np_play = ui.icon_button("media-playback-start-symbolic", lambda: self.media("play-pause"),
+                                      "Play", "cc-media")
+        self.np_next = ui.icon_button("media-skip-forward-symbolic", lambda: self.media("next"),
+                                      "Next", "cc-media")
+        for b in (self.np_play, self.np_next):
+            b.set_valign(Gtk.Align.CENTER)
+            tile.append(b)
+        return tile
+
+    # ---- state
     def refresh(self):
         def work():
             w = hw.wifi_state()
-            return w, hw.bt_state(), hw.brightness(), hw.has_backlight()
+            return w, hw.bt_state(), hw.brightness(), hw.has_backlight(), dnd_on(), media_state()
 
         bg(work, self.show)
         self.load_volume()
@@ -569,7 +707,7 @@ class ControlView(View):
     def show(self, res):
         if isinstance(res, Exception):
             return
-        w, bt, br, backlight = res
+        w, bt, br, backlight, dnd, media = res
         self.wifi_on = w["radio"] and w["adapter"]
         cur = next((n["ssid"] for n in w["nets"] if n["inuse"]), None)
         if not w["adapter"]:
@@ -586,15 +724,38 @@ class ControlView(View):
             self.bt_sub.set_text(", ".join(names) if names else ("On" if self.bt_on else "Off"))
         self.bt_btn.set_sensitive(bt is not None)
         (self.bt_btn.add_css_class if self.bt_on else self.bt_btn.remove_css_class)("on")
+        self.show_dnd(dnd)
+        self.show_media(media)
         self.panel.fit()
         self.bright_row.set_visible(br is not None)
         self.bright_note.set_visible(br is None)
         if br is not None:
-            self.bright.set_range(1 if backlight else hw.SOFT_MIN, 100)
+            # quiet first: set_range clamps the slider's value and fires value-changed, which
+            # would otherwise apply the range's minimum (dimming the screen when the panel opens)
             self.quiet = True
+            self.bright.set_range(1 if backlight else hw.SOFT_MIN, 100)
             self.bright.set_value(max(1, br))
             self.quiet = False
 
+    def show_dnd(self, on):
+        self.dnd = on
+        self.dnd_sub.set_text("Do Not Disturb" if on else "Off")
+        (self.dnd_btn.add_css_class if on else self.dnd_btn.remove_css_class)("on")
+        self.dnd_btn.set_tooltip_text("Show notifications again" if on else "Hide notifications")
+
+    def show_media(self, m):
+        playing = m is not None
+        status, title, artist = m or ("", "", "")
+        self.np_title.set_text(title or ("Playing" if playing else "Not Playing"))
+        self.np_artist.set_text(artist)
+        self.np_artist.set_visible(bool(artist))
+        self.np_play.set_icon_name("media-playback-pause-symbolic" if status == "Playing"
+                                   else "media-playback-start-symbolic")
+        self.np_play.set_tooltip_text("Pause" if status == "Playing" else "Play")
+        for b in (self.np_play, self.np_next):
+            b.set_sensitive(playing)
+
+    # ---- actions
     def toggle_wifi(self):
         on = not self.wifi_on
         bg(lambda: hw.run(["nmcli", "radio", "wifi", "on" if on else "off"]),
@@ -604,6 +765,18 @@ class ControlView(View):
         on = not self.bt_on
         bg(lambda: hw.run(["bluetoothctl", "power", "on" if on else "off"], 10),
            lambda _r: GLib.timeout_add(500, lambda: (self.refresh(), False)[1]))
+
+    def toggle_dnd(self):
+        self.show_dnd(not self.dnd)   # answer the click at once; the real state follows
+        bg(lambda: (hw.run(["makoctl", "mode", "-t", DND], 3), dnd_on())[1], self.show_dnd)
+
+    def media(self, verb):
+        bg(lambda: (hw.run(["playerctl", verb], 3), time.sleep(0.3), media_state())[2], self.show_media)
+
+    def screenshot(self):
+        self.panel.close()
+        # wait for the panel to leave the screen, then let the person drag out an area
+        spawn(["sh", "-c", "sleep 0.4; exec glass-screenshot area"])
 
     def on_bright(self, s):
         if not self.quiet:
@@ -678,7 +851,7 @@ VIEWS = {"wifi": WifiView, "bluetooth": BluetoothView, "sound": SoundView, "cont
 
 
 # --------------------------------------------------------------------------- the window
-def pointer_place():
+def pointer_place(width=WIDTH):
     """(gdk monitor or None, left margin) to open the panel centred under the mouse pointer,
     kept on its screen."""
     try:
@@ -692,7 +865,7 @@ def pointer_place():
         if m.get("transform", 0) % 2:
             w, h = h, w
         if m["x"] <= cur["x"] < m["x"] + w and m["y"] <= cur["y"] < m["y"] + h:
-            left = int(min(max(cur["x"] - m["x"] - WIDTH / 2, 8), w - WIDTH - 8))
+            left = int(min(max(cur["x"] - m["x"] - width / 2, 8), w - width - 8))
             gm = None
             ms = Gdk.Display.get_default().get_monitors()
             for i in range(ms.get_n_items()):
@@ -713,7 +886,7 @@ def layer(win, namespace, level, monitor):
 class Panel:
     def __init__(self, app, view):
         self.app = app
-        monitor, left = pointer_place()
+        monitor, left = pointer_place(CC_WIDTH if view == "control" else WIDTH)
         top = 0
         for area in ui.work_areas():
             top = max(top, int(area[1] - area[4]))  # the top bar's height plus its gap
@@ -752,7 +925,6 @@ class Panel:
         keys.connect("key-pressed", lambda _c, kv, _k, _m: kv == Gdk.KEY_Escape and (self.close() or True))
         self.win.add_controller(keys)
         self.menu = vbox(0, "menu")
-        self.menu.set_size_request(WIDTH, -1)
         self.win.set_child(self.menu)
         self.view = None
         self._fit = 0
@@ -764,6 +936,9 @@ class Panel:
         if self.view is not None:
             self.menu.remove(self.view)
         self.view = VIEWS[name](self, back)
+        cc = name == "control"
+        (self.menu.add_css_class if cc else self.menu.remove_css_class)("cc")
+        self.menu.set_size_request(CC_WIDTH if cc else WIDTH, -1)
         self.menu.append(self.view)
         self.view.refresh()
         self.fit()

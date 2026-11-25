@@ -28,3 +28,9 @@ default-timeout=4000
 border-color=#ff8a8acc
 default-timeout=0
 on-notify=exec glass-sound notification-critical
+
+# Focus > Do Not Disturb in the Control Centre (makoctl mode -t do-not-disturb): keep
+# notifications quietly in the list, but don't show them or play their sounds
+[mode=do-not-disturb]
+invisible=1
+on-notify=none
