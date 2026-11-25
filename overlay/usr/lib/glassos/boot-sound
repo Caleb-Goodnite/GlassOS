@@ -29,6 +29,13 @@ echo "GlassOS: playing boot sound $f"
 mkdir -p /run/glassos && touch /run/glassos/boot-sound-played
 # "sysdefault" is the sound card itself. ALSA's "default" goes through PipeWire, which isn't
 # running this early, so it would fail with "Host is down".
-AUDIODRIVER=alsa AUDIODEV=sysdefault timeout 10 play -q -v "$vol" "$f" 2>/dev/null || \
-  { case "$f" in *.wav) timeout 10 aplay -q -D sysdefault "$f" ;; esac; }
+# One player, picked before it starts. Falling back to aplay whenever play failed made a sound
+# longer than the time limit play twice: the limit stopped play near the end, aplay started the
+# sound again, and the service's own limit cut that off. 15 s is room for any boot sound; the
+# login screen waits for it (glassos-boot-sound.service allows 22 s in all).
+if command -v play >/dev/null 2>&1; then
+  AUDIODRIVER=alsa AUDIODEV=sysdefault timeout 15 play -q -v "$vol" "$f" 2>/dev/null
+else
+  case "$f" in *.wav) timeout 15 aplay -q -D sysdefault "$f" 2>/dev/null ;; esac
+fi
 exit 0
