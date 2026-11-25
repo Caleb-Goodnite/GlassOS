@@ -145,6 +145,8 @@ mousepad                    # text editor
 imv                         # image viewer
 firefox-esr                 # full web browser for sites that need it (telemetry, studies, Pocket and sponsored content off)
 gir1.2-webkit-6.0           # the web engine inside Glass Browser (WebKitGTK)
+gstreamer1.0-plugins-bad    # lets Glass Browser stream video: YouTube needs its Opus parser, and it decodes H.264, AAC and AV1
+gstreamer1.0-gl             # Glass Browser draws video frames on the graphics card
 flatpak                     # installs apps from the App Store (Flathub), each in its own sandbox
 gir1.2-flatpak-1.0          # lets the App Store drive Flatpak and show download progress
 xdg-desktop-portal          # lets sandboxed apps ask for a file, a link or the screen, through you
