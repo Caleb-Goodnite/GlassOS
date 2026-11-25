@@ -14,11 +14,20 @@ B=$'\e[1m'; D=$'\e[2m'; R=$'\e[0m'; C=$'\e[1;36m'; RED=$'\e[1;31m'; G=$'\e[1;32m
 
 say()  { printf '%s\n' "$*"; }
 step() { printf '\n%s==>%s %s%s%s\n' "$C" "$R" "$B" "$*" "$R"; }
-die()  { printf '\n%sCannot continue:%s %s\n' "$RED" "$R" "$*" >&2; read -r -p "Press Enter to close." _ || true; exit 1; }
+die()  { printf '\n%sCannot continue:%s %s\n' "$RED" "$R" "$*" >&2; read -r -p "Press Enter to close." _ || true; DIED=1; exit 1; }
+DIED=""
 ask()  { local __v; read -r -p "$1" __v; printf '%s' "$__v"; }
 
 cleanup() {
+  local rc=$?
   set +e
+  # a step failed: keep the window open so the error above can be read (opened from the
+  # "Install GlassOS" icon, the window would otherwise close at once)
+  if [ "$rc" != 0 ] && [ -z "$DIED" ]; then
+    printf '\n%sThe install stopped because the step above failed.%s The computer may not start\n' "$RED" "$R" >&2
+    printf 'GlassOS yet. Take a photo of this window, then press Enter to close it.\n' >&2
+    read -r _ || true
+  fi
   for m in sys/firmware/efi/efivars sys proc dev/pts dev run boot/efi ""; do
     mountpoint -q "$T/$m" 2>/dev/null && umount -R "$T/$m" 2>/dev/null
   done
