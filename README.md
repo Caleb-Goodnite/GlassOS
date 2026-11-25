@@ -3,7 +3,7 @@
 A Linux desktop built on Debian 13, with a frosted-glass look, a hardware monitor that shows
 where your computer's resources go (Glass Lens), and system sounds you can replace with your own.
 
-Version 2.0.0. It boots, runs, and installs to a disk. The PC build has now been
+Version 2.1.0. It boots, runs, and installs to a disk. The PC build has now been
 installed and confirmed working on desktop hardware, in addition to virtual machine testing.
 
 ## What's in it
@@ -35,7 +35,7 @@ brew install lima qemu
 
 The first build creates a small Debian VM called `glassbuild` (Lima) and builds inside it.
 That build takes 15 to 25 minutes, and later builds are quicker. You get
-`out/GlassOS-2.0.0-arm64.iso` and `out/GlassOS-2.0.0-amd64.iso` (the PC version).
+`out/GlassOS-2.1.0-arm64.iso` and `out/GlassOS-2.1.0-amd64.iso` (the PC version).
 
 To rebuild only what you changed:
 
@@ -69,13 +69,19 @@ This opens a window running the ARM build. The live session logs in by itself. T
 
 ## Install it on a computer
 
-1. Write `out/GlassOS-2.0.0-amd64.iso` to a USB stick (4 GB or larger) with balenaEtcher,
+1. Write `out/GlassOS-2.1.0-amd64.iso` to a USB stick (4 GB or larger) with balenaEtcher,
    Rufus, or `dd`.
 2. Turn off Secure Boot in the computer's firmware settings. GlassOS's boot loader isn't signed yet.
 3. Boot from the USB stick and choose **Install GlassOS** in the boot menu.
-4. The installer asks for a disk, your name, a password, and a time zone. It then shows what it
-   will do and waits for you to type `ERASE`. **It erases the whole disk you choose.** Installing
-   alongside Windows on the same disk isn't supported yet.
+4. The installer asks for a disk, then whether to erase all of it or keep what's on it:
+   - **Erase the whole disk:** GlassOS gets all of it. You type `ERASE` to confirm.
+   - **Dual boot, next to Windows or Linux:** GlassOS goes into free space (12 GB or more) or a
+     partition you pick, and adds itself to the boot menu, which then offers both systems. To
+     make free space, shrink Windows first: Disk Management > right-click (C:) > Shrink Volume.
+     If Windows uses BitLocker, have its recovery key ready.
+
+   It then asks for your name, a password and a time zone, and shows exactly what it will do
+   before changing anything.
 5. When it's done, remove the USB stick and restart.
 
 ## Drivers and compatibility

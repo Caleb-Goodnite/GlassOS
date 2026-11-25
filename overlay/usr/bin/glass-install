@@ -1,9 +1,9 @@
 #!/bin/bash
 # glass-install: put GlassOS on this computer's disk.
 #
-# It asks which disk to use, shows exactly what it will do, and changes nothing
-# until you type ERASE. The whole disk you choose is used for GlassOS (no dual-boot
-# partitioning yet; GRUB will still list other disks' systems it finds).
+# It asks which disk to use, shows exactly what it will do, and changes nothing until you
+# confirm. GlassOS takes either the whole disk, or (dual boot) free space or one partition on
+# it, next to Windows or another system; the boot menu then offers both.
 set -euo pipefail
 [ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
 
@@ -28,6 +28,7 @@ cleanup() {
     printf 'GlassOS yet. Take a photo of this window, then press Enter to close it.\n' >&2
     read -r _ || true
   fi
+  mountpoint -q /mnt/glassos-esp 2>/dev/null && umount /mnt/glassos-esp
   for m in sys/firmware/efi/efivars sys proc dev/pts dev run boot/efi ""; do
     mountpoint -q "$T/$m" 2>/dev/null && umount -R "$T/$m" 2>/dev/null
   done
@@ -76,9 +77,91 @@ done
 n="$(ask "Disk number: ")"
 [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -ge 1 ] && [ "$n" -le ${#CHOICES[@]} ] || die "that isn't one of the numbers above."
 DISK="${CHOICES[$((n - 1))]}"
-size_b="$(lsblk -bdno SIZE "$DISK")"
-[ "$size_b" -ge $((12 * 1024 * 1024 * 1024)) ] || die "$DISK is too small (GlassOS needs at least 12 GB)."
 part() { if [[ "$DISK" =~ [0-9]$ ]]; then echo "${DISK}p$1"; else echo "${DISK}$1"; fi; }
+MIN=$((12 * 1024 * 1024 * 1024))   # GlassOS needs 12 GB
+
+# ----------------------------------------------------------------------------- whole disk or next to
+MODE=erase; ESP=""; WINDOWS=0; LABEL=gpt; TKIND=""
+if [ -n "$(lsblk -lnpo NAME "$DISK" | tail -n +2)" ]; then
+  step "Keep what's already on $DISK?"
+  say "  ${B}1)${R} Erase the whole disk and use all of it for GlassOS"
+  say "  ${B}2)${R} Keep what's on it and put GlassOS next to it (dual boot: you pick a system"
+  say "     each time the computer starts)"
+  m="$(ask "1 or 2: ")"
+  case "$m" in 1) MODE=erase ;; 2) MODE=alongside ;; *) die "type 1 or 2." ;; esac
+fi
+
+if [ "$MODE" = erase ]; then
+  [ "$(lsblk -bdno SIZE "$DISK")" -ge "$MIN" ] || die "$DISK is too small (GlassOS needs at least 12 GB)."
+else
+  LABEL="$(parted -sm "$DISK" print 2>/dev/null | sed -n 2p | cut -d: -f6)"
+  case "$LABEL" in gpt|msdos) ;; *) die "GlassOS can't add a partition to $DISK. Choose 1 to erase it instead." ;; esac
+  # the other system's EFI partition: GlassOS's boot loader goes in it too
+  for p in $(lsblk -lnpo NAME "$DISK" | tail -n +2); do
+    case "$(lsblk -dno PARTTYPE "$p" | tr '[:upper:]' '[:lower:]')" in
+      c12a7328-f81f-11d2-ba4b-00a0c93ec93b|0xef) ESP="$p"; break ;;
+    esac
+  done
+  if [ "$FIRMWARE" = UEFI ]; then
+    [ -n "$ESP" ] || die "$DISK has no EFI system partition, so the system on it starts the older (BIOS) way.
+  Start this USB stick in BIOS/legacy mode instead (in your firmware's boot menu), or choose 1."
+  elif [ "$LABEL" = gpt ] && ! lsblk -no PARTTYPE "$DISK" | grep -qi 21686148-6449-6e6f-744e-656564454649; then
+    die "this USB stick started in BIOS mode, but the system on $DISK starts in UEFI mode.
+  Restart and pick the USB stick's UEFI entry in your firmware's boot menu."
+  fi
+  lsblk -no FSTYPE "$DISK" | grep -qx ntfs && WINDOWS=1
+  if [ -n "$ESP" ]; then
+    mkdir -p /mnt/glassos-esp
+    mount -o ro "$ESP" /mnt/glassos-esp || die "couldn't read the EFI partition $ESP."
+    esp_free="$(df -Pm /mnt/glassos-esp | awk 'NR == 2 {print $4}')"
+    [ -d /mnt/glassos-esp/EFI/Microsoft ] && WINDOWS=1
+    umount /mnt/glassos-esp
+    [ "$esp_free" -ge 12 ] || die "the EFI partition $ESP is full (${esp_free} MB free, GlassOS's boot loader needs 12 MB)."
+  fi
+
+  step "Where should GlassOS go?"
+  T_KIND=(); T_A=(); T_B=(); T_PART=(); T_DESC=()
+  # free (unpartitioned) space of 12 GB or more
+  while read -r a b; do
+    T_KIND+=(free); T_A+=("$a"); T_B+=("$b"); T_PART+=("")
+    T_DESC+=("Free space, $(numfmt --to=iec --suffix=B $((b - a + 1))) (nothing uses it)")
+  done < <(parted -sm "$DISK" unit B print free 2>/dev/null | tr -d B \
+            | awk -F: -v min="$MIN" '$5 ~ /^free/ && $3 - $2 + 1 >= min {print $2, $3}')
+  # or a partition of 12 GB or more, which is erased (never the EFI, Microsoft reserved,
+  # Windows recovery or BIOS boot partitions)
+  for p in $(lsblk -lnpo NAME "$DISK" | tail -n +2); do
+    case "$(lsblk -dno PARTTYPE "$p" | tr '[:upper:]' '[:lower:]')" in
+      c12a7328-f81f-11d2-ba4b-00a0c93ec93b|0xef|e3c9e316-0b5c-4db8-817d-f92df00215ae|\
+      de94bba4-06d1-4d40-a16a-bfd50179d6ac|21686148-6449-6e6f-744e-656564454649|0x27) continue ;;
+    esac
+    [ "$(lsblk -bdno SIZE "$p")" -ge "$MIN" ] || continue
+    fs="$(lsblk -dno FSTYPE "$p")"; lbl="$(lsblk -dno LABEL "$p")"
+    warn="erased if you pick it"
+    [ "$fs" = ntfs ] && warn="${RED}probably Windows' own files: erased if you pick it${R}"
+    T_KIND+=(part); T_A+=(""); T_B+=(""); T_PART+=("$p")
+    T_DESC+=("$p  $(lsblk -dno SIZE "$p" | xargs)  ${fs:-unformatted}${lbl:+ \"$lbl\"}  ($warn)")
+  done
+  if [ ${#T_KIND[@]} -eq 0 ]; then
+    cat <<EOF
+There's no room for GlassOS on $DISK yet. It needs 12 GB of free space (more is better: 30 GB
+or more leaves room for your files). Make room by shrinking the other system, then come back:
+  - ${B}Windows:${R} right-click Start > Disk Management, right-click (C:) > Shrink Volume, and
+    shrink it by 30 GB or more. Leave the new space "Unallocated", then restart from this
+    USB stick and run the installer again.
+  - ${B}Linux:${R} shrink its partition with its disk tool (for example GParted), leaving the
+    space unallocated.
+EOF
+    die "no free space on $DISK."
+  fi
+  i=1
+  for d in "${T_DESC[@]}"; do printf '  %s%d)%s %s\n' "$B" "$i" "$R" "$d"; i=$((i + 1)); done
+  say "${D}  No free space listed? Shrink the other system first (Windows: Disk Management >"
+  say "  Shrink Volume), then run the installer again.${R}"
+  n="$(ask "Number: ")"
+  [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -ge 1 ] && [ "$n" -le ${#T_KIND[@]} ] || die "that isn't one of the numbers above."
+  n=$((n - 1))
+  TKIND="${T_KIND[$n]}"; TA="${T_A[$n]}"; TB="${T_B[$n]}"; TPART="${T_PART[$n]}"
+fi
 
 # ----------------------------------------------------------------------------- you
 step "Your account"
@@ -112,6 +195,8 @@ disk_desc="$(echo "$(lsblk -dno SIZE "$DISK") $(lsblk -dno MODEL "$DISK")" | xar
 bios_line=""
 [ "$ARCH" = amd64 ] && bios_line="       - 1 MB    BIOS boot (lets older PCs start GlassOS)
 "
+WORD=ERASE
+if [ "$MODE" = erase ]; then
 cat <<EOF
   1. ${RED}Everything on $DISK ($disk_desc) is erased.${R}
   2. It gets a new GPT partition table:
@@ -120,30 +205,89 @@ ${bios_line}       - 512 MB  EFI system partition (FAT32): the boot loader
   3. GlassOS is copied onto it, user "$USERNAME" is created, the live "glass" account is removed.
   4. GRUB is installed as the boot loader ($( [ "$ARCH" = amd64 ] && echo "UEFI and BIOS" || echo "UEFI" )).
 EOF
+else
+  if [ "$TKIND" = free ]; then
+    WORD=INSTALL
+    first="A new GlassOS partition (ext4) fills the free space, $(numfmt --to=iec --suffix=B $((TB - TA + 1))).
+     Nothing else on $DISK is touched."
+  else
+    first="${RED}$TPART ($(lsblk -dno SIZE "$TPART" | xargs) $(lsblk -dno FSTYPE "$TPART")) is erased${R} and becomes GlassOS (ext4).
+     Nothing else on $DISK is touched."
+  fi
+  if [ -n "$ESP" ]; then
+    boot="GlassOS's boot loader is added to the EFI partition $ESP, beside the other system's."
+  else
+    boot="GRUB goes in the start of $DISK, in place of the other system's boot code."
+  fi
+cat <<EOF
+  1. $first
+  2. GlassOS is copied onto it, user "$USERNAME" is created, the live "glass" account is removed.
+  3. $boot
+  4. When the computer starts, a menu offers GlassOS (the default after 5 seconds) and the
+     other system$( [ "$WINDOWS" = 1 ] && echo " (Windows Boot Manager)").
+EOF
+  if [ "$WINDOWS" = 1 ]; then say "
+  ${B}If Windows uses BitLocker${R}, have its recovery key ready (aka.ms/myrecoverykey): Windows
+  may ask for it once after the boot menu changes."; fi
+fi
 echo
-c="$(ask "Type ERASE (in capitals) to install, anything else to cancel: ")"
-[ "$c" = ERASE ] || { say "Cancelled. Nothing was changed."; read -r -p "Press Enter to close." _ || true; exit 0; }
+c="$(ask "Type $WORD (in capitals) to install, anything else to cancel: ")"
+[ "$c" = "$WORD" ] || { say "Cancelled. Nothing was changed."; read -r -p "Press Enter to close." _ || true; exit 0; }
 
 # ----------------------------------------------------------------------------- go
 step "Preparing $DISK"
 swapoff -a 2>/dev/null || true
 for p in $(lsblk -lnpo NAME "$DISK" | tail -n +2); do umount -f "$p" 2>/dev/null || true; done
-wipefs -af "$DISK" >/dev/null
-parted -s "$DISK" mklabel gpt
-if [ "$ARCH" = amd64 ]; then
-  parted -s "$DISK" mkpart biosboot 1MiB 2MiB set 1 bios_grub on
-  parted -s "$DISK" mkpart EFI fat32 2MiB 514MiB set 2 esp on
-  parted -s "$DISK" mkpart GlassOS ext4 514MiB 100%
-  ESP="$(part 2)"; ROOTP="$(part 3)"
+if [ "$MODE" = erase ]; then
+  wipefs -af "$DISK" >/dev/null
+  parted -s "$DISK" mklabel gpt
+  if [ "$ARCH" = amd64 ]; then
+    parted -s "$DISK" mkpart biosboot 1MiB 2MiB set 1 bios_grub on
+    parted -s "$DISK" mkpart EFI fat32 2MiB 514MiB set 2 esp on
+    parted -s "$DISK" mkpart GlassOS ext4 514MiB 100%
+    ESP="$(part 2)"; ROOTP="$(part 3)"
+  else
+    parted -s "$DISK" mkpart EFI fat32 1MiB 513MiB set 1 esp on
+    parted -s "$DISK" mkpart GlassOS ext4 513MiB 100%
+    ESP="$(part 1)"; ROOTP="$(part 2)"
+  fi
+  partprobe "$DISK" 2>/dev/null || true
+  udevadm settle
+  for _ in $(seq 20); do [ -b "$ROOTP" ] && break; sleep 0.5; done
+  mkfs.vfat -F 32 -n EFI "$ESP" >/dev/null
+elif [ "$TKIND" = free ]; then
+  # a new partition in the free space, on whole-MiB boundaries inside it
+  before="$(lsblk -lnpo NAME "$DISK" | tail -n +2 | sort)"
+  start=$(( (TA + 1048575) / 1048576 )); end=$(( (TB + 1) / 1048576 ))
+  if [ "$LABEL" = gpt ]; then
+    parted -s "$DISK" unit MiB mkpart GlassOS ext4 "$start" "$end" || die "couldn't make a partition in the free space."
+  else
+    parted -s "$DISK" unit MiB mkpart primary ext4 "$start" "$end" \
+      || die "couldn't make a partition in the free space (an older MBR disk holds at most 4 partitions)."
+  fi
+  partprobe "$DISK" 2>/dev/null || true
+  udevadm settle
+  ROOTP=""
+  for _ in $(seq 20); do
+    ROOTP="$(comm -13 <(printf '%s\n' "$before") <(lsblk -lnpo NAME "$DISK" | tail -n +2 | sort) | head -n1)"
+    [ -n "$ROOTP" ] && [ -b "$ROOTP" ] && break; sleep 0.5
+  done
+  [ -n "$ROOTP" ] || die "the new partition didn't show up. Restart from the USB stick and try again."
 else
-  parted -s "$DISK" mkpart EFI fat32 1MiB 513MiB set 1 esp on
-  parted -s "$DISK" mkpart GlassOS ext4 513MiB 100%
-  ESP="$(part 1)"; ROOTP="$(part 2)"
+  ROOTP="$TPART"
+  swapoff "$ROOTP" 2>/dev/null || true
+  wipefs -af "$ROOTP" >/dev/null
+  # mark it as a Linux partition, so Windows doesn't offer to format it
+  num="$(cat "/sys/class/block/$(basename "$ROOTP")/partition")"
+  if [ "$LABEL" = gpt ]; then
+    parted -s "$DISK" type "$num" 0FC63DAF-8483-4772-8E79-3D69D8477DE4 2>/dev/null || true
+    parted -s "$DISK" name "$num" GlassOS 2>/dev/null || true
+  else
+    parted -s "$DISK" type "$num" 0x83 2>/dev/null || true
+  fi
+  partprobe "$DISK" 2>/dev/null || true
+  udevadm settle
 fi
-partprobe "$DISK" 2>/dev/null || true
-udevadm settle
-for _ in $(seq 20); do [ -b "$ROOTP" ] && break; sleep 0.5; done
-mkfs.vfat -F 32 -n EFI "$ESP" >/dev/null
 mkfs.ext4 -F -q -L GlassOS "$ROOTP"
 
 step "Copying GlassOS onto the disk"
@@ -151,7 +295,7 @@ mkdir -p "$T"
 mount "$ROOTP" "$T"
 unsquashfs -f -d "$T" "$SQUASH"
 mkdir -p "$T/boot/efi"
-mount "$ESP" "$T/boot/efi"
+[ -z "$ESP" ] || mount "$ESP" "$T/boot/efi"
 
 step "Setting up your system"
 # GlassOS's own files must have arrived (a Dell install once lacked the login screen program)
@@ -159,14 +303,18 @@ for f in usr/bin/glass-greeter usr/bin/glass-session usr/share/glassos/build-inf
   [ -e "$T/$f" ] || die "GlassOS files are missing from the copy (/$f). Try another USB stick or ISO."
 done
 ROOT_UUID="$(blkid -s UUID -o value "$ROOTP")"
-ESP_UUID="$(blkid -s UUID -o value "$ESP")"
+ESP_UUID=""
+[ -z "$ESP" ] || ESP_UUID="$(blkid -s UUID -o value "$ESP")"
 fallocate -l 2G "$T/swapfile" && chmod 600 "$T/swapfile" && mkswap -q "$T/swapfile"
 cat > "$T/etc/fstab" <<EOF
 # <what>                                <where>     <type> <options>          <dump> <check>
 UUID=$ROOT_UUID  /          ext4   errors=remount-ro  0      1
-UUID=$ESP_UUID                          /boot/efi  vfat   umask=0077         0      1
+$( [ -n "$ESP_UUID" ] && echo "UUID=$ESP_UUID                          /boot/efi  vfat   umask=0077         0      1")
 /swapfile                                none       swap   sw                 0      0
 EOF
+# Windows keeps the hardware clock in local time; read it the same way, so neither system
+# shows the wrong time after the other ran
+[ "$WINDOWS" = 1 ] && printf '0.0 0 0.0\n0\nLOCAL\n' > "$T/etc/adjtime"
 echo "$HOSTNAME_NEW" > "$T/etc/hostname"
 sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t$HOSTNAME_NEW/" "$T/etc/hosts"
 ln -sf "/usr/share/zoneinfo/$TZ_NEW" "$T/etc/localtime"
@@ -238,14 +386,25 @@ if mountpoint -q /sys/firmware/efi/efivars 2>/dev/null; then :; elif [ -d /sys/f
   mount -t efivarfs efivarfs "$T/sys/firmware/efi/efivars" 2>/dev/null || true
 fi
 efi_target=x86_64-efi; [ "$ARCH" = arm64 ] && efi_target=arm64-efi
+nvram=1
 if [ "$FIRMWARE" = UEFI ]; then
   inc grub-install --target="$efi_target" --efi-directory=/boot/efi --bootloader-id=GlassOS --recheck \
-    || inc grub-install --target="$efi_target" --efi-directory=/boot/efi --bootloader-id=GlassOS --no-nvram
+    || { nvram=0; inc grub-install --target="$efi_target" --efi-directory=/boot/efi --bootloader-id=GlassOS --no-nvram; }
 fi
 # also the fallback path (EFI/BOOT/BOOT*.EFI) for firmware that forgets boot entries, or if
-# this disk is later moved to another computer
-inc grub-install --target="$efi_target" --efi-directory=/boot/efi --removable --no-nvram
-[ "$ARCH" = amd64 ] && inc grub-install --target=i386-pc "$DISK"
+# this disk is later moved to another computer. Next to another system, only when the firmware
+# wouldn't take GlassOS's boot entry: that path may be the other system's own way in.
+if [ -n "$ESP" ] && { [ "$MODE" = erase ] || [ "$nvram" = 0 ]; }; then
+  inc grub-install --target="$efi_target" --efi-directory=/boot/efi --removable --no-nvram
+fi
+if [ "$ARCH" = amd64 ] && { [ "$MODE" = erase ] || [ "$FIRMWARE" = BIOS ]; }; then
+  inc grub-install --target=i386-pc "$DISK"
+fi
+if [ "$MODE" = alongside ]; then
+  # time to pick a system, and os-prober finds the others (Windows Boot Manager, Linux...)
+  sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=5/' "$T/etc/default/grub"
+  grep -q '^GRUB_DISABLE_OS_PROBER=false' "$T/etc/default/grub" || echo 'GRUB_DISABLE_OS_PROBER=false' >> "$T/etc/default/grub"
+fi
 inc update-grub
 
 rm -f "$T/etc/resolv.conf"
@@ -257,7 +416,7 @@ cat <<EOF
 
 ${G}GlassOS is installed.${R}
 
-  Remove the USB stick or DVD, then restart.
+  Remove the USB stick or DVD, then restart.$( [ "$MODE" = alongside ] && printf '\n  At startup, pick GlassOS or your other system in the boot menu.' )
   Log in as ${B}$USERNAME${R}. Admin tasks (installing software, updates) ask for your password.
 
 EOF
