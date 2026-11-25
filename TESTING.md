@@ -49,8 +49,9 @@ to judge speed.
 2. Turn off Secure Boot in the PC's firmware settings.
 3. Start the PC from the stick and pick **Try GlassOS**. Try mode runs from the stick and doesn't
    touch the PC's disks, so it's the safe way to check Wi-Fi, sound and graphics.
-4. Only pick **Install GlassOS** on a PC whose disk you're happy to erase. The installer erases
-   the whole disk you choose.
+4. **Install GlassOS** either erases the whole disk you choose, or (option 2) keeps what's on it
+   and installs next to it in free space, for dual boot. To test dual boot, shrink Windows first
+   (Disk Management > Shrink Volume, 30 GB or more), then check that the boot menu starts both.
 
 The PC version hasn't been tested on real hardware yet, so this is where you'll find the most.
 

@@ -73,9 +73,15 @@ This opens a window running the ARM build. The live session logs in by itself. T
    Rufus, or `dd`.
 2. Turn off Secure Boot in the computer's firmware settings. GlassOS's boot loader isn't signed yet.
 3. Boot from the USB stick and choose **Install GlassOS** in the boot menu.
-4. The installer asks for a disk, your name, a password, and a time zone. It then shows what it
-   will do and waits for you to type `ERASE`. **It erases the whole disk you choose.** Installing
-   alongside Windows on the same disk isn't supported yet.
+4. The installer asks for a disk, then whether to erase all of it or keep what's on it:
+   - **Erase the whole disk:** GlassOS gets all of it. You type `ERASE` to confirm.
+   - **Dual boot, next to Windows or Linux:** GlassOS goes into free space (12 GB or more) or a
+     partition you pick, and adds itself to the boot menu, which then offers both systems. To
+     make free space, shrink Windows first: Disk Management > right-click (C:) > Shrink Volume.
+     If Windows uses BitLocker, have its recovery key ready.
+
+   It then asks for your name, a password and a time zone, and shows exactly what it will do
+   before changing anything.
 5. When it's done, remove the USB stick and restart.
 
 ## Drivers and compatibility
