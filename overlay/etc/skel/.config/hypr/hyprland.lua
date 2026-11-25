@@ -42,6 +42,15 @@ local launcher    = "pkill -x fuzzel || (glass-sound launcher; fuzzel)"
 hl.monitor({ output = "", mode = "preferred", position = "auto", scale = "auto" })
 for _, m in ipairs(S.monitors or {}) do hl.monitor(m) end
 
+-- Brightness for screens without a backlight (virtual machines, most external monitors): the
+-- brightness slider dims the picture instead, with a screen shader that glasshw.py writes
+-- (~/.config/hypr/glass-dim.lua names it). Full brightness turns the shader off.
+local D = optional("glass-dim")
+if type(D) == "table" and D.shader then
+    local f = io.open(D.shader, "r")
+    if f then f:close(); hl.config({ decoration = { screen_shader = D.shader } }) end
+end
+
 -------------------------------------------------------------------------------
 -- Session start: everything GlassOS runs in your session is in this one script.
 hl.on("hyprland.start", function()
@@ -358,8 +367,10 @@ end)
 --   "full"     green: full size (covers the top bar and dock) and back
 --   "zoom"     a double-click on the title bar: fill the space between the top bar and the dock,
 --              and back, like double-clicking a title bar on a Mac
-function glass_window(action)
-    local w = hl.get_active_window()
+--   "center"   move it to the middle of the screen
+-- An optional second argument names a window by address (the top bar's window menu uses it).
+function glass_window(action, address)
+    local w = address and hl.get_window("address:" .. address) or hl.get_active_window()
     if not w then return end
     local sel = "address:" .. w.address
     if action == "close" then
@@ -378,6 +389,19 @@ function glass_window(action)
     elseif action == "zoom" then
         full_size[w.address] = nil
         set_fullscreen(w.address, w.fullscreen == 0 and 1 or 0, 0)
+    elseif action == "center" then
+        if not w.floating then hl.dispatch(hl.dsp.window.float({ action = "set", window = sel })) end
+        if w.fullscreen ~= 0 then full_size[w.address] = nil; set_fullscreen(w.address, 0, 0) end
+        local ww, wh = vec(w.size)
+        if w.monitor and ww then
+            local left, top, right, bottom = work_area(w.monitor, true)
+            local nw, nh = math.min(ww, right - left), math.min(wh, bottom - top)
+            if nw ~= ww or nh ~= wh then
+                hl.dispatch(hl.dsp.window.resize({ x = math.floor(nw), y = math.floor(nh), exact = true, window = sel }))
+            end
+            hl.dispatch(hl.dsp.window.move({ x = math.floor(left + (right - left - nw) / 2),
+                                             y = math.floor(top + (bottom - top - nh) / 2), window = sel }))
+        end
     end
 end
 
@@ -440,52 +464,93 @@ end
 
 -------------------------------------------------------------------------------
 -- Keyboard shortcuts  (Super = the Windows/Command key)
+--
+-- Settings > Keyboard Shortcuts picks a style (GlassOS, Windows, Linux, macOS or your own) and
+-- writes it to ~/.config/hypr/glass-keys.lua; without that file these are GlassOS's own keys.
+-- /usr/lib/glassos/glasskeys.py has the styles. "SUPER" alone means tapping Super: it fires when
+-- Super is let go, and only if no other key was pressed while it was held, so Super+E,
+-- Super+drag and the rest still work. "{n}" stands for 1..9 and "{dir}" for the arrow keys.
 local mod = "SUPER"
 
--- Tap Super on its own to search apps. It fires when Super is let go, and only if no other key
--- was pressed while it was held, so Super+E, Super+drag and the rest still work as before.
-hl.bind(mod .. " + SUPER_L", hl.dsp.exec_cmd(launcher), { release = true, description = "Search apps" })
-hl.bind(mod .. " + SUPER_R", hl.dsp.exec_cmd(launcher), { release = true, description = "Search apps" })
-hl.bind(mod .. " + RETURN", hl.dsp.exec_cmd(terminal),          { description = "Terminal" })
-hl.bind(mod .. " + E",      hl.dsp.exec_cmd(files),             { description = "Files" })
-hl.bind(mod .. " + B",      hl.dsp.exec_cmd(browser),           { description = "Web browser" })
-hl.bind(mod .. " + U",      hl.dsp.exec_cmd(lens),              { description = "Glass Lens (what's using my computer)" })
-hl.bind(mod .. " + I",      hl.dsp.exec_cmd(settings),          { description = "Settings" })
-hl.bind(mod .. " + Q",      hl.dsp.window.close(),              { description = "Close window" })
-hl.bind(mod .. " + F",      hl.dsp.window.fullscreen(),         { description = "Fullscreen" })
-hl.bind(mod .. " + T",      hl.dsp.window.float({ action = "toggle" }), { description = "Tile / float window" })
-hl.bind(mod .. " + C",      hl.dsp.window.center(),             { description = "Center window" })
-hl.bind(mod .. " + L",      hl.dsp.exec_cmd("glass-lock"),      { description = "Lock screen" })
--- Shut down, restart or log out: Super+Option+Delete on a Mac keyboard, Super+Alt+Backspace on a
--- PC. Two modifiers so it can't happen by accident, and the dialog waits 60 seconds anyway.
-hl.bind(mod .. " + ALT + BACKSPACE", hl.dsp.exec_cmd("glass-power"), { description = "Shut down, restart or log out" })
-hl.bind(mod .. " + ALT + DELETE",    hl.dsp.exec_cmd("glass-power"), { description = "Shut down, restart or log out" })
-hl.bind(mod .. " + N",      hl.dsp.exec_cmd("makoctl dismiss --all"), { description = "Clear notifications" })
-hl.bind(mod .. " + SHIFT + N", hl.dsp.exec_cmd("makoctl restore"),     { description = "Show last notification" })
-hl.bind(mod .. " + SLASH",  hl.dsp.exec_cmd("glass-lens --page welcome"), { description = "Keyboard shortcuts" })
-
--- Screenshots
-hl.bind("Print",               hl.dsp.exec_cmd("glass-screenshot screen"))
-hl.bind(mod .. " + SHIFT + S", hl.dsp.exec_cmd("glass-screenshot area"), { description = "Screenshot an area" })
-
--- Focus / move
--- Super+Left / Super+Right: snap the window to that half of the screen (split screen)
-hl.bind(mod .. " + left",  function() snap(hl.get_active_window(), "left") end,  { description = "Snap window to the left half" })
-hl.bind(mod .. " + right", function() snap(hl.get_active_window(), "right") end, { description = "Snap window to the right half" })
--- Super+Alt+arrows: move the focus to the window in that direction
-hl.bind(mod .. " + ALT + left",  hl.dsp.focus({ direction = "left" }))
-hl.bind(mod .. " + ALT + right", hl.dsp.focus({ direction = "right" }))
-hl.bind(mod .. " + ALT + up",    hl.dsp.focus({ direction = "up" }))
-hl.bind(mod .. " + ALT + down",  hl.dsp.focus({ direction = "down" }))
-hl.bind("ALT + TAB",       hl.dsp.window.cycle_next())
-
--- Workspaces ("desktops"): Super+1..9, Super+Ctrl+arrows, or 3-finger swipe
-for i = 1, 9 do
-    hl.bind(mod .. " + " .. i,             hl.dsp.focus({ workspace = i }))
-    hl.bind(mod .. " + SHIFT + " .. i,     hl.dsp.window.move({ workspace = i }))
+local keys = {
+    search = { "SUPER" }, terminal = { "SUPER + RETURN" }, files = { "SUPER + E" }, browser = { "SUPER + B" },
+    lens = { "SUPER + U" }, settings = { "SUPER + I" },
+    close = { "SUPER + Q" }, fullscreen = { "SUPER + F" }, minimize = { "SUPER + M" }, float = { "SUPER + T" },
+    center = { "SUPER + C" }, snap_left = { "SUPER + left" }, snap_right = { "SUPER + right" },
+    focus = { "SUPER + ALT + {dir}" }, cycle = { "ALT + TAB" },
+    ws_go = { "SUPER + {n}" }, ws_move = { "SUPER + SHIFT + {n}" },
+    ws_next = { "SUPER + CTRL + right" }, ws_prev = { "SUPER + CTRL + left" },
+    -- Shut down, restart or log out: two modifiers so it can't happen by accident, and the dialog
+    -- waits 60 seconds anyway
+    lock = { "SUPER + L" }, power = { "SUPER + ALT + BACKSPACE", "SUPER + ALT + DELETE" },
+    shot_screen = { "Print" }, shot_area = { "SUPER + SHIFT + S" },
+    notif_clear = { "SUPER + N" }, notif_restore = { "SUPER + SHIFT + N" }, shortcuts = { "SUPER + SLASH" },
+}
+local K = optional("glass-keys")
+if type(K) == "table" and type(K.keys) == "table" then
+    for id, combos in pairs(K.keys) do
+        if type(combos) == "table" then keys[id] = combos end
+    end
 end
-hl.bind(mod .. " + CTRL + right", hl.dsp.focus({ workspace = "r+1" }))
-hl.bind(mod .. " + CTRL + left",  hl.dsp.focus({ workspace = "r-1" }))
+
+-- What each shortcut does. Each entry makes the thing to bind (x is the number or direction
+-- for {n} and {dir} shortcuts).
+local actions = {
+    search     = { "Search apps",       function() return hl.dsp.exec_cmd(launcher) end },
+    terminal   = { "Terminal",          function() return hl.dsp.exec_cmd(terminal) end },
+    files      = { "Files",             function() return hl.dsp.exec_cmd(files) end },
+    browser    = { "Web browser",       function() return hl.dsp.exec_cmd(browser) end },
+    lens       = { "Glass Lens (what's using my computer)", function() return hl.dsp.exec_cmd(lens) end },
+    settings   = { "Settings",          function() return hl.dsp.exec_cmd(settings) end },
+    close      = { "Close window",      function() return hl.dsp.window.close() end },
+    fullscreen = { "Fullscreen",        function() return hl.dsp.window.fullscreen() end },
+    minimize   = { "Minimize window",   function() return function() glass_window("minimize") end end },
+    float      = { "Tile / float window", function() return hl.dsp.window.float({ action = "toggle" }) end },
+    center     = { "Center window",     function() return hl.dsp.window.center() end },
+    snap_left  = { "Snap window to the left half",  function() return function() snap(hl.get_active_window(), "left") end end },
+    snap_right = { "Snap window to the right half", function() return function() snap(hl.get_active_window(), "right") end end },
+    focus      = { "Move focus",        function(d) return hl.dsp.focus({ direction = d }) end },
+    cycle      = { "Next window",       function() return hl.dsp.window.cycle_next() end },
+    ws_go      = { "Go to desktop",     function(n) return hl.dsp.focus({ workspace = n }) end },
+    ws_move    = { "Move window to desktop", function(n) return hl.dsp.window.move({ workspace = n }) end },
+    ws_next    = { "Next desktop",      function() return hl.dsp.focus({ workspace = "r+1" }) end },
+    ws_prev    = { "Previous desktop",  function() return hl.dsp.focus({ workspace = "r-1" }) end },
+    lock       = { "Lock screen",       function() return hl.dsp.exec_cmd("glass-lock") end },
+    power      = { "Shut down, restart or log out", function() return hl.dsp.exec_cmd("glass-power") end },
+    shot_screen = { "Screenshot of the whole screen", function() return hl.dsp.exec_cmd("glass-screenshot screen") end },
+    shot_area  = { "Screenshot an area", function() return hl.dsp.exec_cmd("glass-screenshot area") end },
+    notif_clear = { "Clear notifications", function() return hl.dsp.exec_cmd("makoctl dismiss --all") end },
+    notif_restore = { "Show last notification", function() return hl.dsp.exec_cmd("makoctl restore") end },
+    shortcuts  = { "Keyboard shortcuts", function() return hl.dsp.exec_cmd("glass-lens --page welcome") end },
+}
+
+-- One bad shortcut (a key name Hyprland doesn't know) is skipped instead of stopping the config
+local function bind_key(combo, make, x, desc)
+    pcall(function()
+        if combo == "SUPER" then
+            hl.bind("SUPER + SUPER_L", make(x), { release = true, description = desc })
+            hl.bind("SUPER + SUPER_R", make(x), { release = true, description = desc })
+        else
+            hl.bind(combo, make(x), { description = desc })
+        end
+    end)
+end
+
+for id, a in pairs(actions) do
+    for _, combo in ipairs(keys[id] or {}) do
+        if type(combo) == "string" and combo ~= "" then
+            if combo:find("{n}", 1, true) then
+                for i = 1, 9 do bind_key((combo:gsub("{n}", tostring(i))), a[2], i, a[1]) end
+            elseif combo:find("{dir}", 1, true) then
+                for _, d in ipairs({ "left", "right", "up", "down" }) do bind_key((combo:gsub("{dir}", d)), a[2], d, a[1]) end
+            else
+                bind_key(combo, a[2], nil, a[1])
+            end
+        end
+    end
+end
+
+-- Desktops can also be switched with Super+scroll or a 3-finger swipe
 hl.bind(mod .. " + mouse_down",   hl.dsp.focus({ workspace = "e+1" }))
 hl.bind(mod .. " + mouse_up",     hl.dsp.focus({ workspace = "e-1" }))
 hl.gesture({ fingers = 3, direction = "horizontal", action = "workspace" })

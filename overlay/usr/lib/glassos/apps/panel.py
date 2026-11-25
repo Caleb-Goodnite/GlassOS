@@ -5,6 +5,7 @@
   glass-panel bluetooth  Bluetooth on/off and your devices
   glass-panel sound      volume, and which speakers or headphones to use
   glass-panel control    Control Centre: Wi-Fi, Bluetooth, display brightness and sound in one place
+  glass-panel window     the focused window: Close, Minimize, Full Size, Center (the top bar's app name)
 
 It opens under the mouse pointer and closes when you click anywhere else or press Escape.
 Nothing runs in the background: it reads the current state when it opens, and quits when it closes.
@@ -560,7 +561,7 @@ class ControlView(View):
     def refresh(self):
         def work():
             w = hw.wifi_state()
-            return w, hw.bt_state(), hw.brightness()
+            return w, hw.bt_state(), hw.brightness(), hw.has_backlight()
 
         bg(work, self.show)
         self.load_volume()
@@ -568,7 +569,7 @@ class ControlView(View):
     def show(self, res):
         if isinstance(res, Exception):
             return
-        w, bt, br = res
+        w, bt, br, backlight = res
         self.wifi_on = w["radio"] and w["adapter"]
         cur = next((n["ssid"] for n in w["nets"] if n["inuse"]), None)
         if not w["adapter"]:
@@ -589,6 +590,7 @@ class ControlView(View):
         self.bright_row.set_visible(br is not None)
         self.bright_note.set_visible(br is None)
         if br is not None:
+            self.bright.set_range(1 if backlight else hw.SOFT_MIN, 100)
             self.quiet = True
             self.bright.set_value(max(1, br))
             self.quiet = False
@@ -605,10 +607,74 @@ class ControlView(View):
 
     def on_bright(self, s):
         if not self.quiet:
-            spawn(["brightnessctl", "-q", "set", f"{int(s.get_value())}%"])
+            set_brightness_soon(int(s.get_value()))
 
 
-VIEWS = {"wifi": WifiView, "bluetooth": BluetoothView, "sound": SoundView, "control": ControlView}
+_bright = {"want": None, "busy": False}
+
+
+def set_brightness_soon(pct):
+    """Set the brightness off the UI thread; while the slider is dragged only the latest value is
+    applied, so the screen keeps up without a queue of stale levels."""
+    _bright["want"] = pct
+    if _bright["busy"]:
+        return
+
+    def work():
+        while _bright["want"] is not None:
+            v, _bright["want"] = _bright["want"], None
+            hw.set_brightness(v)
+        _bright["busy"] = False
+
+    _bright["busy"] = True
+    threading.Thread(target=work, daemon=True).start()
+
+
+# --------------------------------------------------------------------------- Window
+def glass_window(action, address):
+    spawn(["hyprctl", "eval", f'glass_window("{action}", "{address}")'])
+
+
+class WindowView(View):
+    """The top bar's app name: Close, Minimize, Full Size and Center for the focused window, so
+    every window can be closed and found again, even one that has no title bar."""
+
+    def __init__(self, panel, back=False):
+        super().__init__(panel, back)
+        try:
+            w = json.loads(ui.hypr("j/activewindow") or "{}") or {}
+        except ValueError:
+            w = {}
+        addr = w.get("address", "")
+        if addr.startswith("0x"):
+            addr = addr[2:]
+        name = w.get("title") or w.get("class") or ""
+        if not addr:
+            self.append(self.title_row("No window"))
+            self.append(label("Open an app, then click its name here to close, minimize or move it.",
+                              "sub menu-pad", wrap=True))
+            return
+        if len(name) > 38:
+            name = name[:37] + "…"
+        self.append(self.title_row(name or "Window"))
+        self.append(sep())
+        full = w.get("fullscreen", 0) not in (0, False)
+
+        def act(action):
+            glass_window(action, "0x" + addr)
+            panel.close()
+
+        for text, icon_name, action in (
+            ("Close Window", "window-close-symbolic", "close"),
+            ("Minimize", "window-minimize-symbolic", "minimize"),
+            ("Exit Full Size" if full else "Full Size", "view-fullscreen-symbolic", "full"),
+            ("Center on Screen", "zoom-fit-best-symbolic", "center"),
+        ):
+            self.append(item(lambda a=action: act(a), icon(icon_name), text))
+
+
+VIEWS = {"wifi": WifiView, "bluetooth": BluetoothView, "sound": SoundView, "control": ControlView,
+         "window": WindowView}
 
 
 # --------------------------------------------------------------------------- the window

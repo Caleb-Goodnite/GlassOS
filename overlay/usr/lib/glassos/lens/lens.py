@@ -451,18 +451,26 @@ class WelcomePage(Page):
                     "or open GlassOS Help from it.")
         g = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True,
                         min_children_per_line=1, max_children_per_line=2, column_spacing=24, row_spacing=8)
-        shortcuts = [
-            ("Super", "Search and open apps"), ("Super + Return", "Terminal"),
-            ("Super + E", "Files"), ("Super + B", "Web browser"),
-            ("Super + U", "Glass Lens"), ("Super + Q", "Close window"),
-            ("Super + F", "Fullscreen"), ("Super + T", "Tile / float window"),
-            ("Super + C", "Center window"), ("Super + L", "Lock screen"),
-            ("Super + Alt + Backspace", "Shut down, restart or log out"), ("Super + 1…9", "Switch desktop"),
+        try:  # the keys you chose in Settings > Keyboard Shortcuts
+            import glasskeys
+            used = glasskeys.effective()
+
+            def k(aid):
+                return ", ".join(glasskeys.pretty(c) for c in used.get(aid, [])) or "(none)"
+        except Exception:
+            def k(aid):
+                return "—"
+        shortcuts = [(k(aid), d) for aid, d in [
+            ("search", "Search and open apps"), ("terminal", "Terminal"), ("files", "Files"),
+            ("browser", "Web browser"), ("lens", "Glass Lens"), ("close", "Close window"),
+            ("fullscreen", "Fullscreen"), ("float", "Tile / float window"), ("center", "Center window"),
+            ("lock", "Lock screen"), ("power", "Shut down, restart or log out"), ("ws_go", "Switch desktop")]]
+        shortcuts += [
             ("Super + drag", "Move any window"), ("Drag an edge", "Resize a window"),
             ("Drag the title bar", "Move a GlassOS app's window"), ("Super + right-drag", "Resize from anywhere"),
-            ("Print", "Screenshot of the whole screen"), ("Super + Shift + S", "Screenshot of an area"),
-            ("3-finger swipe", "Switch desktop"), ("Super + N", "Clear notifications"),
-            ("Super + /", "Show this page"),
+            (k("shot_screen"), "Screenshot of the whole screen"), (k("shot_area"), "Screenshot of an area"),
+            ("3-finger swipe", "Switch desktop"), (k("notif_clear"), "Clear notifications"),
+            (k("shortcuts"), "Show this page"), ("Settings", "Change these: Keyboard Shortcuts"),
         ]
         for k, d in shortcuts:
             r = hbox(12)

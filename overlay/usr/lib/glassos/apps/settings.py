@@ -6,9 +6,10 @@ Everything it changes is a plain file you can read:
   ~/.config/hypr/glass-settings.lua   the same, written out for the desktop (Hyprland)
   ~/.config/glassos/appearance.json   glass level, accent and dock size for GlassOS apps
   ~/.config/hypr/hypridle.conf        dim / lock / screen-off timers
+  ~/.config/hypr/glass-keys.lua       keyboard shortcuts (the styles are in /usr/lib/glassos/glasskeys.py)
 System-wide things (Wi-Fi, Bluetooth, time zone) go through NetworkManager, BlueZ and systemd.
 
-Usage: glass-settings [--page network|bluetooth|displays|sound|appearance|input|time|power|privacy|users|updates|about]
+Usage: glass-settings [--page network|bluetooth|displays|sound|appearance|input|shortcuts|time|power|privacy|users|updates|about]
 """
 import glob
 import json
@@ -23,6 +24,8 @@ import time
 sys.path.insert(0, "/usr/lib/glassos")
 sys.path.insert(0, "/usr/lib/glassos/lens")
 import glassui as ui  # noqa: E402
+import glasshw  # noqa: E402
+import glasskeys  # noqa: E402
 from glasshw import get_volume, nm_connect_new, nm_split, wpctl_devices  # noqa: E402
 from glassui import hbox, label, vbox  # noqa: E402
 import gi  # noqa: E402
@@ -48,6 +51,10 @@ flowboxchild { padding: 0; background: none; }
 .icon-style:hover { background: alpha(#ffffff, 0.06); }
 .icon-style.current { border-color: alpha(#ffffff, 0.85); background: alpha(#ffffff, 0.08); }
 .bars { font-family: "JetBrains Mono", monospace; letter-spacing: -1px; }
+.kbd { font-family: "JetBrains Mono", monospace; font-size: 12px; padding: 3px 9px; border-radius: 8px;
+       background: alpha(#ffffff, 0.10); border: 1px solid alpha(#ffffff, 0.18); }
+.big-kbd { font-size: 20px; padding: 14px; }
+button.style-pick.current { background-image: none; background: alpha(#ffffff, 0.85); color: #10111a; }
 .clock-big { font-size: 34px; font-weight: 700; font-feature-settings: "tnum"; }
 """
 
@@ -499,7 +506,9 @@ class DisplaysPage(Page):
         self.bright = ui.card("Brightness")
         self.bscale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 5, 100, 1)
         self.bscale.set_draw_value(False)
-        self.bscale.connect("value-changed", lambda s: spawn(["brightnessctl", "-q", "set", f"{int(s.get_value())}%"]))
+        self.bquiet = False
+        self.bwant = None
+        self.bscale.connect("value-changed", self.on_bright)
         self.bright.append(self.bscale)
         self.body.append(self.bright)
 
@@ -552,15 +561,31 @@ class DisplaysPage(Page):
             row.append(ui.button("Apply", apply, "pill accent"))
             c.append(row)
             self.box.append(c)
-        code, out, _ = run(["brightnessctl", "-m", "-c", "backlight"])
-        if code == 0 and out.strip():
-            self.bright.set_visible(True)
-            try:
-                self.bscale.set_value(int(out.split(",")[3].rstrip("%")))
-            except (IndexError, ValueError):
-                pass
-        else:
-            self.bright.set_visible(False)
+        # always shown: a screen without a backlight (a VM, most external monitors) is dimmed in
+        # software instead (glasshw.set_brightness)
+        self.bright.set_visible(True)
+        self.bscale.set_range(5 if glasshw.has_backlight() else glasshw.SOFT_MIN, 100)
+        self.bquiet = True
+        self.bscale.set_value(glasshw.brightness())
+        self.bquiet = False
+
+    def on_bright(self, s):
+        """Applied off the UI thread; while dragging, only the latest level is set."""
+        if self.bquiet:
+            return
+        busy = self.bwant is not None
+        self.bwant = int(s.get_value())
+        if busy:
+            return
+
+        def work():
+            while True:
+                v = self.bwant
+                glasshw.set_brightness(v)
+                if self.bwant == v:
+                    self.bwant = None
+                    return
+        threading.Thread(target=work, daemon=True).start()
 
     def reset(self, name):
         mons_state = load_state().get("monitors", {})
@@ -921,9 +946,255 @@ class InputPage(Page):
         dd = dropdown([n for _, n in self.layouts], idx,
                       lambda i: save_state({"kb_layout": self.layouts[i][0], "kb_variant": ""}), search=True)
         kc.append(ui.setting_row("Layout", "Type to search.", dd))
-        b = ui.button("Keyboard shortcuts…", lambda: spawn(["glass-launch", "glass-lens", "--page", "welcome"]))
-        kc.append(ui.setting_row("Shortcuts", "Super is the Windows or ⌘ key.", b))
+        b = ui.button("Keyboard shortcuts…", lambda: self.win.show_page("shortcuts"))
+        kc.append(ui.setting_row("Shortcuts", "Windows, Linux or Mac keys, or your own.", b))
         self.body.append(kc)
+
+
+# --------------------------------------------------------------------------- Keyboard shortcuts
+class KeyCapture(Gtk.Window):
+    """Asks for a new shortcut: press it, or type it. done(combo) gets Hyprland's form."""
+
+    MOD_KEYS = {"Super_L": "SUPER", "Super_R": "SUPER", "Meta_L": "SUPER", "Meta_R": "SUPER",
+                "Control_L": "CTRL", "Control_R": "CTRL", "Alt_L": "ALT", "Alt_R": "ALT",
+                "Shift_L": "SHIFT", "Shift_R": "SHIFT"}
+
+    def __init__(self, parent, action, kind, done):
+        super().__init__(transient_for=parent, modal=True, title="Change shortcut")
+        self.add_css_class("glass")
+        self.set_default_size(440, -1)
+        self.kind, self.done, self.combo = kind, done, None
+        self.other_key = False  # a non-modifier key was pressed since Super went down
+        body = vbox(14, "page")
+        body.append(label(glasskeys.DESC[action], "card-title"))
+        hint = {"n": "Hold the keys to use with 1–9 and press any number.",
+                "dir": "Hold the keys to use with the arrow keys and press any arrow."}.get(
+            kind, "Press the keys together. To use a tap of Super on its own, press Super and let go.")
+        body.append(label(hint, "dim", wrap=True))
+        self.shown = label("Waiting for keys…", "kbd big-kbd", xalign=0.5)
+        body.append(self.shown)
+        body.append(label("Or type it, like Ctrl + Alt + T:", "dim small"))
+        self.entry = Gtk.Entry()
+        self.entry.connect("activate", lambda *_: self.save())
+        body.append(self.entry)
+        self.err = label("", "dim small", wrap=True)
+        body.append(self.err)
+        row = hbox(8)
+        row.append(ui.spacer())
+        row.append(ui.button("Cancel", self.close))
+        row.append(ui.button("Save", self.save))
+        body.append(row)
+        self.set_child(body)
+        keys = Gtk.EventControllerKey()
+        keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        keys.connect("key-pressed", self.on_press)
+        keys.connect("key-released", self.on_release)
+        self.add_controller(keys)
+        # While this is open, ask the desktop to pass every key here instead of acting on it
+        # (otherwise pressing Super+L to set "lock screen" would lock the screen)
+        self.connect("map", lambda *_: self.inhibit(True))
+        self.connect("close-request", lambda *_: (self.inhibit(False), False)[1])
+
+    def inhibit(self, on):
+        try:
+            surf = self.get_surface()
+            if on:
+                surf.inhibit_system_shortcuts(None)
+            else:
+                surf.restore_system_shortcuts()
+        except Exception:
+            pass
+
+    @staticmethod
+    def mods_of(state):
+        m = []
+        if state & (Gdk.ModifierType.SUPER_MASK | Gdk.ModifierType.META_MASK):
+            m.append("SUPER")
+        if state & Gdk.ModifierType.CONTROL_MASK:
+            m.append("CTRL")
+        if state & Gdk.ModifierType.ALT_MASK:
+            m.append("ALT")
+        if state & Gdk.ModifierType.SHIFT_MASK:
+            m.append("SHIFT")
+        return m
+
+    def on_press(self, ctl, keyval, keycode, state):
+        mods = self.mods_of(state)
+        focus = self.get_focus()  # (the entry's inner text widget, in GTK 4)
+        typing = focus is not None and (focus == self.entry or focus.is_ancestor(self.entry))
+        if typing and not set(mods) - {"SHIFT"}:
+            return False  # typing in the box (Shift too, for "+")
+        name = Gdk.keyval_name(keyval) or ""
+        if name in self.MOD_KEYS:
+            if self.MOD_KEYS[name] not in mods:
+                mods.append(self.MOD_KEYS[name])
+            if mods == ["SUPER"]:
+                self.other_key = False
+            held = [m for m in glasskeys.MODS if m in mods]
+            self.shown.set_text(" + ".join(glasskeys.pretty_key(m) for m in held) + " + …")
+            return True
+        self.other_key = True
+        # the key as it is without Shift (so Shift+1 is "1", not "!")
+        found = ctl.get_widget().get_display().translate_key(keycode, 0, 0)
+        base = found[1] if found and found[0] else keyval
+        key = Gdk.keyval_name(Gdk.keyval_to_lower(base)) or name
+        if self.kind == "n":
+            if not key.isdigit():
+                return True
+            key = "{n}"
+        elif self.kind == "dir":
+            if key.lower() not in ("left", "right", "up", "down"):
+                return True
+            key = "{dir}"
+        plain_ok = key == "Print" or (key[:1] == "F" and key[1:].isdigit())
+        if not mods and not plain_ok:
+            self.err.set_text("Use at least one of Super, Ctrl or Alt, so the key still types normally.")
+            return True
+        self.set_combo(glasskeys.normalize(" + ".join(mods + [key])))
+        return True
+
+    def on_release(self, ctl, keyval, keycode, state):
+        name = Gdk.keyval_name(keyval) or ""
+        others = set(self.mods_of(state)) - {"SUPER"}
+        if name in ("Super_L", "Super_R") and not self.other_key and not others and self.kind == "":
+            self.set_combo("SUPER")
+        elif self.combo is None and not self.mods_of(state):
+            self.shown.set_text("Waiting for keys…")
+
+    def set_combo(self, combo):
+        if not combo:
+            return
+        self.combo = combo
+        self.err.set_text("")
+        self.shown.set_text(glasskeys.pretty(combo))
+        self.entry.set_text("")
+
+    def save(self):
+        typed = self.entry.get_text().strip()
+        combo = self.combo
+        if typed:
+            combo = glasskeys.normalize(typed)
+            if combo and self.kind == "n" and "{n}" not in combo:
+                combo = None
+            if combo and self.kind == "dir" and "{dir}" not in combo:
+                combo = None
+            if not combo:
+                example = {"n": "Super + Shift + {n}", "dir": "Super + Alt + {dir}"}.get(self.kind, "Ctrl + Alt + T")
+                self.err.set_text(f"That isn't a shortcut GlassOS understands. Write it like {example}.")
+                return
+        if not combo:
+            self.err.set_text("Press a shortcut first.")
+            return
+        self.inhibit(False)
+        self.done(combo)
+        self.destroy()
+
+
+class ShortcutsPage(Page):
+    title, icon = "Keyboard Shortcuts", "preferences-desktop-keyboard-shortcuts-symbolic"
+
+    def __init__(self, win):
+        super().__init__(win)
+        self.header("Keyboard Shortcuts", "Pick the keys you're used to. Super is the Windows key, or ⌘ Command "
+                    "on a Mac keyboard; Alt is ⌥ Option.")
+        sc = ui.card("Style")
+        styles = hbox(8)
+        self.style_btn = {}
+        for sid, name, _d in glasskeys.STYLES:
+            b = ui.button(name, lambda s=sid: self.pick(s), "pill style-pick")
+            self.style_btn[sid] = b
+            styles.append(b)
+        sc.append(styles)
+        self.style_desc = label("", "dim", wrap=True)
+        sc.append(self.style_desc)
+        self.actions_row = hbox(8)
+        sc.append(self.actions_row)
+        self.body.append(sc)
+        self.list = vbox(14)
+        self.body.append(self.list)
+        self.refresh()
+
+    @staticmethod
+    def state():
+        st = load_state()
+        return st, glasskeys.current_preset(st), glasskeys.effective(st)
+
+    def apply(self, changes):
+        st = save_state(changes)  # (reloads the desktop too, but glass-keys.lua must be written first)
+        glasskeys.write_lua(glasskeys.effective(st), glasskeys.current_preset(st))
+        spawn(["hyprctl", "reload", "config-only"])
+        self.refresh()
+
+    def pick(self, sid):
+        st, cur, keys = self.state()
+        if sid == cur:
+            return
+        ch = {"keys_preset": sid}
+        if sid == "custom" and not st.get("keys_custom"):
+            ch["keys_custom"] = keys  # start your own set from the style you had
+        self.apply(ch)
+
+    def set_keys(self, aid, combos):
+        _st, _cur, keys = self.state()
+        keys[aid] = combos
+        self.apply({"keys_preset": "custom", "keys_custom": keys})
+
+    def capture(self, aid, add):
+        def done(combo):
+            _st, _cur, keys = self.state()
+            old = keys.get(aid, [])
+            if add:
+                if combo not in old:
+                    self.set_keys(aid, old + [combo])
+            else:
+                self.set_keys(aid, [combo])
+        KeyCapture(self.win, aid, glasskeys.KIND[aid], done).present()
+
+    def refresh(self):
+        _st, cur, keys = self.state()
+        for sid, b in self.style_btn.items():
+            (b.add_css_class if sid == cur else b.remove_css_class)("current")
+        self.style_desc.set_text(next(d for s, _n, d in glasskeys.STYLES if s == cur))
+        ui.clear(self.actions_row)
+        custom = cur == "custom"
+        if custom:
+            ids = [s for s, _n, _d in glasskeys.STYLES if s != "custom"]
+            dd = dropdown([n for s, n, _d in glasskeys.STYLES if s != "custom"], 0)
+            self.actions_row.append(label("Start over from", "dim"))
+            self.actions_row.append(dd)
+            self.actions_row.append(ui.button("Reset", lambda: self.apply(
+                {"keys_preset": "custom", "keys_custom": glasskeys.PRESETS[ids[dd.get_selected()]]})))
+        else:
+            self.actions_row.append(ui.button("Customize these…", lambda: self.apply(
+                {"keys_preset": "custom", "keys_custom": keys})))
+        clash = glasskeys.clashes(keys)
+        ui.clear(self.list)
+        for section in glasskeys.SECTIONS:
+            c = ui.card(section)
+            for aid, sec, desc, _kind in glasskeys.ACTIONS:
+                if sec != section:
+                    continue
+                right = hbox(6)
+                combos = keys.get(aid, [])
+                if not combos:
+                    right.append(label("None", "dim"))
+                for combo in combos:
+                    right.append(label(glasskeys.pretty(combo), "kbd"))
+                if custom:
+                    right.append(ui.button("Change", lambda a=aid: self.capture(a, False)))
+                    right.append(ui.icon_button("list-add-symbolic", lambda a=aid: self.capture(a, True),
+                                                "Add another shortcut"))
+                    if combos:
+                        right.append(ui.icon_button("edit-clear-symbolic", lambda a=aid: self.set_keys(a, []),
+                                                    "Remove its shortcut"))
+                sub = None
+                if aid in clash:
+                    sub = "⚠ Same keys as: " + ", ".join(glasskeys.DESC[o] for o in clash[aid])
+                c.append(ui.setting_row(desc, sub, right))
+            self.list.append(c)
+        if cur == "macos":
+            self.list.append(label("In the macOS style, Ctrl + ← / → switch desktops, so apps can't use them to "
+                                   "jump between words. Choose Custom to change that.", "dim small", wrap=True))
 
 
 # --------------------------------------------------------------------------- Date & time
@@ -1879,7 +2150,7 @@ class AboutPage(Page):
 
 
 PAGES = [("network", NetworkPage), ("bluetooth", BluetoothPage), ("displays", DisplaysPage), ("sound", SoundPage),
-         ("appearance", AppearancePage), ("input", InputPage), ("time", TimePage), ("power", PowerPage),
+         ("appearance", AppearancePage), ("input", InputPage), ("shortcuts", ShortcutsPage), ("time", TimePage), ("power", PowerPage),
          ("privacy", PrivacyPage), ("users", UsersPage), ("updates", UpdatesPage),
          ("about", AboutPage)]
 
