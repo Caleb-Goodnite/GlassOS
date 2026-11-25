@@ -347,15 +347,43 @@ watch = hl.timer(function()
 end, { timeout = 250, type = "repeat" })
 watch:set_enabled(false)
 
+-- Going full size says how to come back, the way browsers do ("Press Esc to exit full screen").
+-- The shortcut shown is the one from the chosen shortcut style (Settings > Keyboard Shortcuts).
+local fullscreen_key = "Super+F"
+local function say_how_to_leave()
+    hl.exec_cmd("notify-send -a GlassOS -t 3500 -h string:x-canonical-private-synchronous:glass-fullscreen "
+        .. "'Full screen' 'Hold Esc, or press " .. fullscreen_key .. ", to leave full screen.'")
+end
+
+local function go_full_size(addr)
+    set_fullscreen(addr, 2, 1)
+    full_size[addr] = true
+    watch:set_enabled(true)
+    say_how_to_leave()
+end
+
 hl.on("window.fullscreen", function(w)
     w = w or hl.get_active_window()
     -- the app asked to be maximized (client 1); a zoom (below) is maximized with client 0
     if w and w.fullscreen == 1 and w.fullscreen_client == 1 then
-        set_fullscreen(w.address, 2, 1)
-        full_size[w.address] = true
-        watch:set_enabled(true)
+        go_full_size(w.address)
     end
 end)
+
+-- Holding Esc for half a second leaves full screen, for any window, even one without a title
+-- bar. A quick tap still goes to the app as usual (apps use Esc for their own things).
+local esc_hold
+esc_hold = hl.timer(function()
+    esc_hold:set_enabled(false)
+    local w = hl.get_active_window()
+    if w and w.fullscreen ~= 0 then
+        full_size[w.address] = nil
+        set_fullscreen(w.address, 0, 0)
+    end
+end, { timeout = 500, type = "repeat" })
+esc_hold:set_enabled(false)
+hl.bind("Escape", function() esc_hold:set_enabled(true) end, { non_consuming = true })
+hl.bind("Escape", function() esc_hold:set_enabled(false) end, { release = true, non_consuming = true })
 
 -------------------------------------------------------------------------------
 -- Title bars: Mac-style red, yellow and green buttons on every window
@@ -382,9 +410,7 @@ function glass_window(action, address)
             full_size[w.address] = nil
             set_fullscreen(w.address, 0, 0)
         else
-            set_fullscreen(w.address, 2, 1)               -- same full size as an app's own maximize
-            full_size[w.address] = true
-            watch:set_enabled(true)
+            go_full_size(w.address)                       -- same full size as an app's own maximize
         end
     elseif action == "zoom" then
         full_size[w.address] = nil
@@ -491,6 +517,12 @@ if type(K) == "table" and type(K.keys) == "table" then
     for id, combos in pairs(K.keys) do
         if type(combos) == "table" then keys[id] = combos end
     end
+end
+-- the full-screen hint names this style's shortcut: "SUPER + up" reads "Super+Up"
+if type(keys.fullscreen) == "table" and type(keys.fullscreen[1]) == "string" and keys.fullscreen[1] ~= "" then
+    local parts = {}
+    for t in keys.fullscreen[1]:gmatch("[^+%s]+") do parts[#parts + 1] = t:sub(1, 1):upper() .. t:sub(2):lower() end
+    fullscreen_key = table.concat(parts, "+")
 end
 
 -- What each shortcut does. Each entry makes the thing to bind (x is the number or direction
