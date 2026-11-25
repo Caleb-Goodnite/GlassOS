@@ -9,10 +9,18 @@ The dock's size comes from Settings > Appearance > Dock size; it always sits cen
 screen. The icon under the pointer lifts a little (Settings can turn that off). While a window is full
 size (or when "Hide the dock automatically" is on), the dock gets out of the way and comes back
 up when the pointer touches the bottom edge of the screen.
+
+The top edge works like a Mac's full screen too: while a window is full size, touching the top of
+the screen calls up the top bar and, under it, the window's title bar with red, yellow and green
+buttons (red closes, yellow minimizes, green takes the window back to the size it had). They live
+here because the dock already follows the pointer and the full-size window.
 """
 import json
 import os
+import re
 import shlex
+import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -24,7 +32,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 gi.require_version("Gtk4LayerShell", "1.0")
-from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 from gi.repository import Gtk4LayerShell as Layer  # noqa: E402
 
 CONF = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "glassos", "dock.conf")
@@ -133,6 +141,31 @@ popover.dock-label > contents {
   background: alpha(#1c1d2a, 0.88); border: 1px solid alpha(#ffffff, 0.18); border-radius: 9px;
   padding: 3px 10px; color: #ffffff; font-weight: 500; box-shadow: none;
 }
+/* The full-size window's title bar, called up from the top edge (TitleStrip). Dark glass like the
+   title bars hyprbars draws (hyprland.lua), a little denser so its title stays readable over a white
+   page, with the top bar's rim so the two read as one family. */
+window.glass-titlebar { background: transparent; }
+.fs-title {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 17px;
+  background-color: alpha(#10111a, 0.62);
+  border: 1px solid alpha(#ffffff, 0.14);
+  border-top-color: alpha(#ffffff, 0.42);
+  border-bottom-color: alpha(#ffffff, 0.20);
+  box-shadow: inset 0 1px 1px alpha(#ffffff, 0.16), inset 0 -1px 1px alpha(#ffffff, 0.05);
+  color: alpha(#ffffff, 0.88);
+  font-size: 13px;
+  font-weight: 500;
+}
+/* the same buttons as glassui.TRAFFIC_LIGHTS_CSS, symbols on hover */
+.traffic-lights button { min-width: 13px; min-height: 13px; padding: 0; border-radius: 99px; border: none;
+                         background-image: none; box-shadow: inset 0 0 0 0.5px alpha(#000, 0.25); color: alpha(#000, 0.6); }
+.traffic-lights button label { font-size: 10px; font-weight: 800; opacity: 0; text-shadow: none; }
+.traffic-lights:hover button label { opacity: 1; }
+.traffic-lights button.tl-close { background-color: #ff5f57; }
+.traffic-lights button.tl-min { background-color: #febc2e; }
+.traffic-lights button.tl-full { background-color: #28c840; }
 """
 
 
@@ -448,6 +481,138 @@ class DockItem(Gtk.Button):
         pop.popup()
 
 
+# ----------------------------------------------------------------------------- full size: the top edge
+WAYBAR_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "waybar")
+TITLE_TOP = 46      # the title strip sits under the top bar: its 6 px margin, 34 px height, then a 6 px gap
+TITLE_HEIGHT = 34   # as tall as the title bars hyprbars draws
+
+
+class TopBarCopy:
+    """A second copy of the top bar on Hyprland's overlay layer, hidden until it's called up over a
+    full-size window. Hyprland draws the normal bar (top layer) under full-screen windows and has no
+    rule to lift it, so the copy runs from the same top.jsonc and top.css with three changes.
+
+    Debian's Waybar (0.12) can only toggle its bars on SIGUSR1, so this keeps track of which way
+    round they are. It also takes no space of its own (exclusive false), which makes Hyprland place it
+    below the space the normal bar keeps; a negative top margin of that size puts it back on top."""
+
+    def __init__(self):
+        self.proc = None
+        self.shown = False
+        self.ready_at = 0.0
+        self.offset = None
+        self.conf = os.path.join(GLib.get_user_runtime_dir(), "glassos", "top-fullsize.jsonc")
+
+    def bar_margin(self):
+        try:
+            with open(os.path.join(WAYBAR_DIR, "top.jsonc")) as f:
+                m = re.search(r'"margin-top"\s*:\s*(-?\d+)', f.read())
+            return int(m.group(1)) if m else 0
+        except OSError:
+            return 0
+
+    def start(self, reserved_top):
+        top = os.path.join(WAYBAR_DIR, "top.jsonc")
+        if not shutil.which("waybar") or not os.path.exists(top):
+            return
+        self.offset = reserved_top
+        os.makedirs(os.path.dirname(self.conf), exist_ok=True)
+        with open(self.conf, "w") as f:
+            json.dump({"include": [top], "layer": "overlay", "exclusive": False, "start_hidden": True,
+                       "margin-top": self.bar_margin() - reserved_top}, f)
+        self.shown = False
+        self.ready_at = time.monotonic() + 1.5   # SIGUSR1 ends a Waybar that hasn't set up its handler yet
+        if self.proc and self.proc.poll() is None:
+            self.proc.send_signal(signal.SIGUSR2)   # reread the config
+            return
+        cmd = ["waybar", "-c", self.conf, "-s", os.path.join(WAYBAR_DIR, "top.css")]
+        if shutil.which("systemd-run"):
+            # its own scope, like the rest of the desktop (session-start), so Glass Lens can show it.
+            # A copy left by an earlier dock is stopped first.
+            subprocess.run(["systemctl", "--user", "stop", "glass-topbar-fullsize.scope"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+            cmd = ["systemd-run", "--user", "--scope", "--quiet", "--collect", "--slice=glass-desktop.slice",
+                   "--unit=glass-topbar-fullsize", "--description=GlassOS desktop: top bar over full-size windows",
+                   "--"] + cmd
+        # without the dock's gtk4-layer-shell preload (glass-dock), which would turn Waybar's GTK 3
+        # bar into an ordinary window
+        env = {k: v for k, v in os.environ.items() if k != "LD_PRELOAD"}
+        try:
+            self.proc = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            self.proc = None
+
+    def show(self, reserved_top):
+        if reserved_top != self.offset or not self.proc or self.proc.poll() is not None:
+            self.start(reserved_top)
+        self.toggle_to(True)
+
+    def hide(self):
+        self.toggle_to(False)
+
+    def toggle_to(self, shown):
+        if shown == self.shown or not self.proc or self.proc.poll() is not None:
+            return
+        if time.monotonic() < self.ready_at:
+            return
+        self.proc.send_signal(signal.SIGUSR1)
+        self.shown = shown
+
+
+class TitleStrip(Gtk.Window):
+    """The full-size window's own title bar, under the top bar while that's called up."""
+
+    def __init__(self, app, dock):
+        super().__init__(application=app)
+        self.dock = dock
+        self.address = None
+        self.add_css_class("glass-titlebar")
+        self.set_decorated(False)
+        Layer.init_for_window(self)
+        Layer.set_namespace(self, "glass-titlebar")
+        Layer.set_layer(self, Layer.Layer.OVERLAY)
+        for edge, margin in ((Layer.Edge.TOP, TITLE_TOP), (Layer.Edge.LEFT, 10), (Layer.Edge.RIGHT, 10)):
+            Layer.set_anchor(self, edge, True)
+            Layer.set_margin(self, edge, margin)
+        Layer.set_exclusive_zone(self, -1)
+        Layer.set_keyboard_mode(self, Layer.KeyboardMode.NONE)
+        bar = Gtk.CenterBox()
+        bar.add_css_class("fs-title")
+        lights = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        lights.add_css_class("traffic-lights")
+        lights.set_valign(Gtk.Align.CENTER)
+        for cls, sym, tip, action in (("tl-close", "×", "Close", "close"),
+                                      ("tl-min", "−", "Minimize", "minimize"),
+                                      ("tl-full", "+", "Leave full size", "full")):
+            b = Gtk.Button(label=sym)
+            b.add_css_class(cls)
+            b.set_tooltip_text(tip)
+            b.set_valign(Gtk.Align.CENTER)
+            b.connect("clicked", lambda _b, a=action: self.act(a))
+            lights.append(b)
+        bar.set_start_widget(lights)
+        self.title = Gtk.Label()
+        self.title.set_ellipsize(Pango.EllipsizeMode.END)
+        self.title.set_max_width_chars(80)
+        bar.set_center_widget(self.title)
+        self.set_child(bar)
+
+    def act(self, action):
+        if self.address and re.fullmatch(r"0x[0-9a-fA-F]+", self.address):
+            subprocess.Popen(["hyprctl", "eval", f'glass_window("{action}", "{self.address}")'],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.dock.hide_top()
+
+    def show_for(self, win, monitor_name):
+        self.address = win.get("address")
+        self.title.set_text(win.get("title") or win.get("class") or "")
+        ms = Gdk.Display.get_default().get_monitors()
+        for i in range(ms.get_n_items()):
+            if ms.get_item(i).get_connector() == monitor_name:
+                Layer.set_monitor(self, ms.get_item(i))
+        self.set_visible(True)
+
+
 class Dock(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app)
@@ -490,6 +655,12 @@ class Dock(Gtk.ApplicationWindow):
         self.monitors = []
         self.monitors_at = 0.0
         self.icon_theme = None
+        # the top edge, while a window is full size
+        self.fs_window = None
+        self.top_bar = TopBarCopy()
+        self.title_strip = TitleStrip(app, self)
+        self.top_revealed = False
+        self.top_hide_id = None
         self.apply_size()
         # Settings saves appearance.json; pick up a new dock size straight away
         self.appearance_mon = Gio.File.new_for_path(APPEARANCE).monitor_file(Gio.FileMonitorFlags.NONE, None)
@@ -580,9 +751,18 @@ class Dock(Gtk.ApplicationWindow):
         active = active_address()
         aw = next((c for c in cl if c.get("address") == active), None)
         fs = bool(aw) and aw.get("fullscreen") == 2 and not is_minimized(aw)
+        self.fs_window = aw if fs else None
         if fs != self.fullscreen:
             self.fullscreen = fs
             self.update_hidden_mode()
+            if fs and self.top_bar.proc is None:
+                # the first time anything goes full size, so it's ready by the time the pointer gets there
+                self.top_bar.start(self.reserved_top(aw.get("monitor")))
+        if self.top_revealed:
+            if not fs or aw.get("address") != self.title_strip.address:
+                self.hide_top()
+            else:
+                self.title_strip.title.set_text(aw.get("title") or aw.get("class") or "")
         running = {}   # app_id -> (info, [windows])
         for c in cl:
             cls = c.get("class") or c.get("initialClass") or ""
@@ -730,6 +910,8 @@ class Dock(Gtk.ApplicationWindow):
                 w, h = h, w
             mx, my = m.get("x", 0), m.get("y", 0)
             if mx <= x < mx + w and my <= y < my + h:
+                if self.fullscreen:
+                    self.watch_top(m, y - my)
                 if y >= my + h - 3:
                     self.cancel_hide()
                     if not self.revealed:
@@ -739,6 +921,67 @@ class Dock(Gtk.ApplicationWindow):
                     self.schedule_hide(250)
                 break
         return True
+
+
+    # ------------------------------------------------------------------------- the top edge
+    def reserved_top(self, monitor_id):
+        """The space the top bar keeps at the top of a screen."""
+        try:
+            mons = json.loads(hypr_request("j/monitors") or "[]")
+        except ValueError:
+            mons = []
+        for m in mons:
+            if m.get("id") == monitor_id:
+                r = m.get("reserved") or []
+                return int(r[1]) if len(r) > 1 else 0
+        return 0
+
+    def watch_top(self, m, dy):
+        """While a window is full size, the top edge of its screen calls up the top bar and the
+        window's title bar; they go again once the pointer moves down past them."""
+        here = self.fs_window is not None and m.get("id") == self.fs_window.get("monitor")
+        near = here and dy <= TITLE_TOP + TITLE_HEIGHT + 20
+        if here and dy <= 1:
+            self.cancel_top_hide()
+            if not self.top_revealed:
+                self.top_revealed = True
+                r = m.get("reserved") or []
+                self.top_bar.show(int(r[1]) if len(r) > 1 else 0)
+                self.title_strip.show_for(self.fs_window, m.get("name"))
+        elif not self.top_revealed:
+            return
+        elif near:
+            self.cancel_top_hide()
+            self.top_bar.toggle_to(True)   # in case the bar wasn't ready when the strip came up
+        elif not self.top_hide_id and not self.top_menu_open():
+            def go():
+                self.top_hide_id = None
+                self.hide_top()
+                return False
+            self.top_hide_id = GLib.timeout_add(300, go)
+
+    def top_menu_open(self):
+        """A drop-down or the GlassOS menu opened from the called-up top bar keeps it up."""
+        try:
+            layers = json.loads(hypr_request("j/layers") or "{}")
+        except ValueError:
+            return False
+        for mon in layers.values():
+            for level in (mon.get("levels") or {}).values():
+                if any(ls.get("namespace") in ("glass-panel", "launcher") for ls in level):
+                    return True
+        return False
+
+    def cancel_top_hide(self):
+        if self.top_hide_id:
+            GLib.source_remove(self.top_hide_id)
+            self.top_hide_id = None
+
+    def hide_top(self):
+        self.cancel_top_hide()
+        self.top_revealed = False
+        self.top_bar.hide()
+        self.title_strip.set_visible(False)
 
 
 class DockApp(Gtk.Application):
