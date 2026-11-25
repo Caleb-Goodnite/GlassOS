@@ -8,7 +8,8 @@ ConditionPathExists=!/etc/glassos/no-boot-sound
 [Service]
 Type=oneshot
 ExecStart=/usr/lib/glassos/boot-sound
-TimeoutStartSec=12
+# up to 4 s waiting for the sound card, then up to 15 s of sound (boot-sound)
+TimeoutStartSec=22
 
 [Install]
 WantedBy=multi-user.target
