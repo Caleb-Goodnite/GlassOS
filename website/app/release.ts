@@ -22,6 +22,6 @@ const iso = (arch: string, name: string, forWhat: string, size: string): Iso => 
 };
 
 export const ISOS: Iso[] = [
-  iso("amd64", "PC", "64-bit Intel and AMD computers, with UEFI or older BIOS firmware.", "SIZE_AMD64"),
-  iso("arm64", "ARM", "ARM computers with UEFI firmware, and virtual machines on Apple Silicon Macs.", "SIZE_ARM64"),
+  iso("amd64", "PC", "64-bit Intel and AMD computers, with UEFI or older BIOS firmware.", "963 MB"),
+  iso("arm64", "ARM", "ARM computers with UEFI firmware, and virtual machines on Apple Silicon Macs.", "815 MB"),
 ];
