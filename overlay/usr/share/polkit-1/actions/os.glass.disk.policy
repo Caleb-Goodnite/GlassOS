@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- Disk Utility: making, formatting, resizing and deleting partitions needs an administrator's password -->
+<policyconfig>
+  <vendor>GlassOS</vendor>
+  <action id="os.glass.disk">
+    <description>Change disks and partitions</description>
+    <message>Disk Utility wants to change a disk. Type an administrator's password to allow this.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/glassos/glass-disk</annotate>
+  </action>
+</policyconfig>

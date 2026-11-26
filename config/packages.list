@@ -50,6 +50,9 @@ os-prober                   # finds Windows/other OSes so GRUB can offer them (d
 parted                      # partitions the disk during install
 dosfstools                  # formats the EFI partition
 e2fsprogs                   # formats and checks the main ext4 partition
+fdisk                       # Disk Utility: sfdisk resizes partitions
+exfatprogs                  # Disk Utility: formats exFAT, for USB sticks shared with Windows and Macs
+ntfs-3g                     # Disk Utility: formats and resizes NTFS (Windows) partitions
 rsync                       # copies files during install
 squashfs-tools              # unpacks the live image onto your disk during install
 

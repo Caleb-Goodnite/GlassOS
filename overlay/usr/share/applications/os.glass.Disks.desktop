@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Disk Utility
+Comment=See and change the disks and partitions on this computer
+Exec=glass-disks
+Icon=drive-harddisk
+Terminal=false
+Categories=System;Utility;GTK;
+Keywords=disk;partition;format;drive;usb;storage;resize;dual boot;
+StartupWMClass=os.glass.Disks
