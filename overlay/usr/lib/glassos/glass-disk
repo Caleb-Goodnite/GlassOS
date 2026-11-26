@@ -1,0 +1,119 @@
+#!/bin/sh
+# Disk changes for Disk Utility, run as root through pkexec (polkit asks for an admin's password
+# first, in a window). Every command refuses a partition or disk that is in use: mounted, swap,
+# or holding an open encrypted volume, LVM or RAID.
+#
+#   glass-disk new DISK START_MIB END_MIB ext4|fat32|exfat|ntfs|none NAME
+#   glass-disk format PART ext4|fat32|exfat|ntfs NAME
+#   glass-disk resize PART NEW_BYTES        (ext4, NTFS, or a partition with no filesystem)
+#   glass-disk delete PART
+#   glass-disk erase DISK                   (new, empty GPT partition table)
+set -e
+die() { echo "$*" >&2; exit 1; }
+[ "$(id -u)" = 0 ] || die "glass-disk must run as root (through pkexec)"
+uid="${PKEXEC_UID:-0}"
+gid="$(id -g "$uid" 2>/dev/null || echo 0)"
+
+device() {   # $1 must be a block device under /dev
+    echo "$1" | grep -Eq '^/dev/[A-Za-z0-9/_-]+$' && [ -b "$1" ] || die "$1 isn't a disk or partition."
+}
+is_part() { [ -e "/sys/class/block/$(basename "$1")/partition" ]; }
+busy() {     # mounted, swap, or holding an open encrypted volume, LVM or RAID
+    lsblk -nro TYPE,MOUNTPOINTS "$1" | awk '$2 != "" || $1 ~ /^(crypt|lvm|raid|md|dm)/ { f = 1 } END { exit !f }'
+}
+free_of_use() { busy "$1" && die "$1 is in use. Unmount it first, or start from the GlassOS USB stick if GlassOS runs from it." || true; }
+settle() { udevadm settle 2>/dev/null || true; }
+disk_of() { echo "/dev/$(lsblk -nro PKNAME "$1" | head -1)"; }
+num_of() { cat "/sys/class/block/$(basename "$1")/partition"; }
+
+make_fs() {  # make_fs PART FS NAME
+    part="$1"; fs="$2"; name="$3"
+    wipefs -a -q "$part"
+    case "$fs" in
+    ext4)  set --; [ -n "$name" ] && set -- -L "$name"
+           mkfs.ext4 -F -q -E "root_owner=$uid:$gid" "$@" "$part" ;;
+    fat32) set --; [ -n "$name" ] && set -- -n "$name"
+           mkfs.vfat -F 32 "$@" "$part" >/dev/null ;;
+    exfat) set --; [ -n "$name" ] && set -- -L "$name"
+           mkfs.exfat "$@" "$part" >/dev/null ;;
+    ntfs)  set --; [ -n "$name" ] && set -- -L "$name"
+           mkfs.ntfs -f -q "$@" "$part" ;;
+    none)  ;;
+    *)     die "Unknown format: $fs" ;;
+    esac
+}
+
+action="$1"; shift || true
+case "$action" in
+new)
+    disk="$1"; start="$2"; end="$3"; fs="$4"; name="${5:-data}"
+    device "$disk"; [ "$(lsblk -dno TYPE "$disk")" = disk ] || die "$disk isn't a disk."
+    echo "$start$end" | grep -Eq '^[0-9]+$' && [ "$end" -gt "$start" ] || die "That size doesn't fit."
+    case "$fs" in ext4) pt=ext4 ;; fat32) pt=fat32 ;; exfat|ntfs) pt=ntfs ;; none) pt="" ;; *) die "Unknown format: $fs" ;; esac
+    if [ "$(blkid -o value -s PTTYPE "$disk")" = gpt ]; then kind="$name"; else kind=primary; fi
+    parted -s -a optimal "$disk" unit MiB mkpart "$kind" $pt "$start" "$end"
+    settle; partprobe "$disk" 2>/dev/null || true; settle
+    # find the new partition by where it starts (sysfs counts 512-byte sectors)
+    want=$((start * 2048)); part=""
+    for p in /sys/class/block/"$(basename "$disk")"*; do
+        [ -e "$p/partition" ] && [ "$(cat "$p/start")" = "$want" ] && part="/dev/$(basename "$p")"
+    done
+    [ -n "$part" ] || die "The partition was made, but Linux didn't see it yet. Restart and format it then."
+    make_fs "$part" "$fs" "$5"
+    echo "$part" ;;
+format)
+    part="$1"; device "$part"; is_part "$part" || die "$part isn't a partition."
+    free_of_use "$part"
+    [ "$2" = none ] && die "Pick a format."
+    make_fs "$part" "$2" "$3" ;;
+delete)
+    part="$1"; device "$part"; is_part "$part" || die "$part isn't a partition."
+    free_of_use "$part"
+    disk="$(disk_of "$part")"; n="$(num_of "$part")"
+    wipefs -a -q "$part" || true
+    parted -s "$disk" rm "$n"
+    settle ;;
+resize)
+    part="$1"; bytes="$2"; device "$part"; is_part "$part" || die "$part isn't a partition."
+    echo "$bytes" | grep -Eq '^[0-9]+$' || die "That size doesn't fit."
+    free_of_use "$part"
+    disk="$(disk_of "$part")"; n="$(num_of "$part")"; sys="/sys/class/block/$(basename "$part")"
+    start=$(cat "$sys/start"); cur=$(cat "$sys/size")              # 512-byte sectors
+    new=$(( bytes / 1048576 * 2048 ))                               # whole MiB
+    [ "$new" -ge 2048 ] || die "That's too small."
+    for p in /sys/class/block/"$(basename "$disk")"*; do            # must not run into the next partition
+        [ -e "$p/partition" ] || continue
+        s=$(cat "$p/start"); [ "$s" -gt "$start" ] && [ "$s" -lt $((start + new)) ] && die "That runs into the next partition."
+    done
+    [ $((start + new)) -le $(( $(cat "/sys/class/block/$(basename "$disk")/size") - 2048 )) ] || die "That runs past the end of the disk."
+    fs="$(blkid -o value -s TYPE "$part" || true)"
+    case "$fs" in ext4|ext3|ext2|ntfs|"") ;; *) die "Disk Utility can resize ext4 and NTFS partitions. This one is ${fs}." ;; esac
+    table() {   # set the partition's size in the table, then tell Linux about just this partition
+        echo ",$new" | sfdisk -q --no-reread --no-tell-kernel -N "$n" "$disk"
+        partx -u --nr "$n" "$disk"; settle
+    }
+    if [ "$new" -lt "$cur" ]; then    # shrinking: the filesystem first, then the partition
+        case "$fs" in
+        ext*) e2fsck -f -y "$part" >/dev/null || [ $? -le 1 ] || die "The filesystem check found errors it couldn't fix."
+              resize2fs "$part" "$((new / 2))K" ;;
+        ntfs) yes | ntfsresize -f -s "$((new * 512))" "$part" >/dev/null ;;
+        esac
+        table
+    else                              # growing: the partition first, then the filesystem
+        table
+        case "$fs" in
+        ext*) e2fsck -f -y "$part" >/dev/null || [ $? -le 1 ] || die "The filesystem check found errors it couldn't fix."
+              resize2fs "$part" ;;
+        ntfs) yes | ntfsresize -f "$part" >/dev/null ;;
+        esac
+    fi ;;
+erase)
+    disk="$1"; device "$disk"; [ "$(lsblk -dno TYPE "$disk")" = disk ] || die "$disk isn't a disk."
+    free_of_use "$disk"
+    for p in $(lsblk -nrpo PATH,TYPE "$disk" | awk '$2 == "part" { print $1 }'); do wipefs -a -q "$p" || true; done
+    wipefs -a -q "$disk"
+    parted -s "$disk" mklabel gpt
+    settle; partprobe "$disk" 2>/dev/null || true; settle ;;
+*)
+    die "usage: glass-disk new|format|resize|delete|erase ..." ;;
+esac
