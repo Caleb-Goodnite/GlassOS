@@ -174,7 +174,9 @@ hl.config({
         no_donation_nag = true,
     },
 
-    cursor = { inactive_timeout = 0 },
+    -- Hardware cursors leave the pointer invisible on some graphics chips (older ThinkPads, for
+    -- one). Drawing it in software works everywhere, for a small cost.
+    cursor = { inactive_timeout = 0, no_hardware_cursors = true },
 })
 
 -- Springy, fluid motion
