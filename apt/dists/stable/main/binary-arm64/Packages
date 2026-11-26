@@ -1,0 +1,32 @@
+Package: glassos-desktop
+Architecture: arm64
+Version: 1:81+2.2.0
+Priority: optional
+Section: misc
+Maintainer: GlassOS <https://github.com/Caleb-Goodnite/GlassOS>
+Installed-Size: 20404
+Depends: adwaita-icon-theme, alsa-utils, bash-completion, bibata-cursor-theme, bluez, brightnessctl, ca-certificates, cage, curl, dbus-user-session, dconf-gsettings-backend, dosfstools, e2fsprogs, efibootmgr, exfatprogs, fdisk, firefox-esr, firmware-atheros, firmware-brcm80211, firmware-iwlwifi, firmware-linux-free, firmware-realtek, flatpak, fonts-dejavu-core, fonts-font-awesome, fonts-inter, fonts-jetbrains-mono, fonts-noto-color-emoji, foot, fuzzel, gir1.2-flatpak-1.0, gir1.2-gtk-4.0, gir1.2-gtk4layershell-1.0, gir1.2-webkit-6.0, greetd, grim, grub-common, grub-efi-arm64-bin, grub2-common, gsettings-desktop-schemas, gstreamer1.0-gl, gstreamer1.0-plugins-bad, gvfs, hypridle, hyprland, hyprland-guiutils, hyprlock, imv, initramfs-tools, iproute2, iputils-ping, less, libcanberra-gtk3-module, libegl1, libgl1, libgl1-mesa-dri, libgles2, libgtk4-layer-shell0, libnotify-bin, libpam-systemd, librsvg2-common, libsox-fmt-alsa, libsox-fmt-base, libsox-fmt-mp3, libspa-0.2-bluetooth, linux-image-arm64, live-boot, locales, lsof, mako-notifier, mate-polkit, mousepad, nano, network-manager, nftables, ntfs-3g, os-prober, papirus-icon-theme, parted, pciutils, pipewire, pipewire-alsa, pipewire-pulse, pkexec, playerctl, plymouth, plymouth-label, polkitd, procps, psmisc, pulsemixer, python3, python3-gi, python3-gi-cairo, python3-pyudev, rsync, rtkit, shared-mime-info, slurp, sox, squashfs-tools, sudo, swaybg, systemd-sysv, systemd-timesyncd, thunar, tlp, tuigreet, udev, udisks2, usbutils, waybar, wireplumber, wl-clipboard, wpasupplicant, xdg-desktop-portal, xdg-desktop-portal-gtk, xdg-user-dirs, xdg-utils, xwayland, xz-utils, zstd
+Filename: pool/main/stable/glassos-desktop_81+2.2.0_arm64.deb
+Size: 11783436
+MD5sum: 49891e9ad79ea8094f53b6688f260a37
+SHA1: 0a3ab62242a68af8611e23599a1ae4f008fa2c6c
+SHA256: b6542f61483f4c57076fb20542ede20182a76b8585b79ac364b7ec678ed89488
+SHA512: 7aab31af9eab115db33a9e72c41e990b76d6189e5f450fe33b85656f9956145e4d554d5bbe11edc9740370f9456359a06ee04b239f48a5d95218e81681d4053e
+Homepage: https://github.com/Caleb-Goodnite/GlassOS
+Description: GlassOS 2.2.0 (Prism) desktop
+ * Prepare GlassOS 2.2.0 release
+ * Pointer: draw it in software so it shows on every graphics chip
+ * Disk Utility: see and change disks and partitions
+ * Glass Browser: play YouTube and other streamed video
+ * Boot sound: play once, all the way through
+ * Full size: the top edge calls up the top bar and the window's buttons
+ * Full screen: hold Esc to leave, and say so when a window goes full screen
+ * GlassOS 2.1.0: dual boot
+ * Installer: dual boot next to Windows or Linux
+ * Prepare GlassOS 2.0.0 release
+ * Dock: shrink the glass back to the icons
+ * Hyprland: fix Lua error on mouse release (y was always nil)
+ * Installer: stop if GlassOS's own files didn't arrive
+ * Add glasskeys and update hyprland, settings, Lens and help
+ * Login: never leave automatic login set for an account that doesn't exist
+

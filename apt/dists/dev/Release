@@ -1,0 +1,32 @@
+Architectures: amd64 arm64
+Codename: dev
+Components: main
+Date: Thu, 26 Nov 2026 21:50:15 +0000
+Description: GlassOS updates (dev)
+Label: GlassOS
+Origin: GlassOS
+Suite: dev
+MD5Sum:
+ 868e8324eabfc7ea354838d5c25833fa             2391 Release
+ f0df1880b3d635ab7fd30e955a5b0ee7             3224 main/binary-amd64/Packages
+ 3d26e71c844a1c63a8527d2385c0b15e             1728 main/binary-amd64/Packages.gz
+ 714b0444984b7ef2b11b1932302700d8             3108 main/binary-arm64/Packages
+ f5cf9aa1e62ab5c1a3ae7876a7d37388             1689 main/binary-arm64/Packages.gz
+SHA1:
+ f44d6a83e4fce678a37e4db46aa23f1dcc2ac8b1             2391 Release
+ c7d4c2343ec6ddd48f1d253dd97a8f1314696d91             3224 main/binary-amd64/Packages
+ 1a7cf531c41f797eaa86a553022056b84dd7d835             1728 main/binary-amd64/Packages.gz
+ 7a0729b974adb67124a548c2500f8909f9b22434             3108 main/binary-arm64/Packages
+ d737129bbb5fa2aaccb14ea96817fdb2842bc473             1689 main/binary-arm64/Packages.gz
+SHA256:
+ 45af056ba8da324bb9115fe2cdb063815c9463dc2ebffdef27150c1a02743a4c             2391 Release
+ c102b8ecc2934f739c478824f58ee92b934ad89c1772d0992d00990b9adf773c             3224 main/binary-amd64/Packages
+ f572548242d4287c6b2b4e7e60a8ffe97df85bd9d4f31cd86849a4c68fac8229             1728 main/binary-amd64/Packages.gz
+ 7022a2193f22e51a225b73b06c6cb6bda992b98a44a4747d53414e10f12c80f6             3108 main/binary-arm64/Packages
+ 6e9238031cf7a878657d0ed7aff3ea636b9fe7b042e7998e77de342cda6ee64e             1689 main/binary-arm64/Packages.gz
+SHA512:
+ 2fe3f27ce93c4842ab7e758ea265c01eba70e149f450e50fded432826a89fd72487fb88375c233022c56c1ebe416ae2bf56d5288c7a65896cac3cd74e27055db             2391 Release
+ 0a3cb4725025c1f457d3318621e020a23dfe2fbf664d318187ea1e36b32d314c24da0631b2faa3cf0a1c83060f754fe3eb6fa18a26387afa0c8babb9204f45c9             3224 main/binary-amd64/Packages
+ 74933b15e1cb564c534e7cd7405c630c3d6dbfc5eb7918ccf201abce84ddda2189e81061eeca4372019323ab45c059a670d5ec3089183323b9a8a3940eab9ade             1728 main/binary-amd64/Packages.gz
+ eb601e1ae2edd2d1db7b54fc618d4cb285ff8ecd77efc36222adbd29a67469eb7f443f7f197ecab987869942eb3bf61e2b4343dd5242497e92850f53d4f5712b             3108 main/binary-arm64/Packages
+ 137fb0c94bb1ebf835e9382a90c7cb4f5b5382134f731d365a81c36ec37475a9be9e18aa14048f921b11f06bc11d85372f0dc934a71ff153d45cc337aa89f32a             1689 main/binary-arm64/Packages.gz

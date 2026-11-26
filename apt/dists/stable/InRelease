@@ -1,0 +1,42 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Architectures: amd64 arm64
+Codename: stable
+Components: main
+Date: Thu, 26 Nov 2026 22:18:13 +0000
+Description: GlassOS updates (stable)
+Label: GlassOS
+Origin: GlassOS
+Suite: stable
+MD5Sum:
+ fbabe459446383edcbd63d790628a483             2400 Release
+ d4f763046bb12908c4e7088a3407a560             3227 main/binary-amd64/Packages
+ 26c90f59076e2e050e43c5f9e7e6435e             1728 main/binary-amd64/Packages.gz
+ 2960c12aba95a72a8dcf4343b4174b1f             3111 main/binary-arm64/Packages
+ 60d3faed2b40f209fff740654efc31b3             1692 main/binary-arm64/Packages.gz
+SHA1:
+ 0bb20c3282da9f4506b93fc0b264b001eed2adec             2400 Release
+ 1c2dea6b6e1a84b15aaf2404e784ac5e406647a1             3227 main/binary-amd64/Packages
+ 5a662a195849e68485e250df1b456b382d606944             1728 main/binary-amd64/Packages.gz
+ a3d713e4eb3cd3be70b1bd2fff1a079da1dd479d             3111 main/binary-arm64/Packages
+ 504dce3f71fe3b2824153e0a3e7d75c716003941             1692 main/binary-arm64/Packages.gz
+SHA256:
+ ad94078091fea6f69c7c8defe74756bf0d2067afcbeecce04060b81f86c66a24             2400 Release
+ ce23943eaaf54fea6c7f470eb463432e56abb3b9fcd0e6719736ca8d375bad13             3227 main/binary-amd64/Packages
+ a3559ff735ab0e803e2857bcd7d6b8649576b0f135d2943be4af8750e3681361             1728 main/binary-amd64/Packages.gz
+ f100985d9e3c969af1ea0b3b5240a33c727f85bf3378cd7b65aff0da1388165c             3111 main/binary-arm64/Packages
+ 23f3215ba25542b8bb157a960eed1f9813a37c4d8724c800f7ef0d90a0140640             1692 main/binary-arm64/Packages.gz
+SHA512:
+ b07545d779da749c5828dcd4175630c27be4d4f546cb0c64018769d1b1e5edd6379719945f1f37a3275e041346aaa9bf3fda5468bd76a606a11fee3d59e31530             2400 Release
+ 910b904df4c3c7092c5da419be60202a9a5bacadef7316fae08583eb3b58a1168e976cfa1da14cc2fc615f0b2acc693c70be9b558a04ce848c8fdbb8ef79e540             3227 main/binary-amd64/Packages
+ bd7b4086be6e784f94e1044f5a9549c51599cb31dc2b88a36b2881b69f0d1ec4d2dbddb73089ec2d510e4ac4ffe773d58a42784f9aae113c68f223355f25dcfc             1728 main/binary-amd64/Packages.gz
+ 2f0031eae2dc00ab40eb94587f1102562e696b2ed1c3ef117d64cd1a852ee9c0d339505e4fbde5f3c02e511533d8602366fb098f5440311b88be80fdc2e31a03             3111 main/binary-arm64/Packages
+ 2518d2e9deef27e664b56f1583d6547a4669d3558aa96939dfd82dc64a43aa96ed771bdfbd497d4512751fbc4640e4d299922546793c0485c409305d756e6586             1692 main/binary-arm64/Packages.gz
+-----BEGIN PGP SIGNATURE-----
+
+iHUEARYKAB0WIQRMQiwQ5tdnyGPJ69/VN7e5Ia6NVQUCawiwJQAKCRDVN7e5Ia6N
+VcKnAQCHAfmemmmXertBkFfG6Pu5pTuYGvlhrVBqx9Trywx1GwEA/kd+yJ6F0xab
+FEhfDo03vjXSM49PdDA8T10mqJZIXQw=
+=71Zo
+-----END PGP SIGNATURE-----
