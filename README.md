@@ -3,7 +3,7 @@
 A Linux desktop built on Debian 13, with a frosted-glass look, a hardware monitor that shows
 where your computer's resources go (Glass Lens), and system sounds you can replace with your own.
 
-Version 2.1.0. It boots, runs, and installs to a disk. The PC build has now been
+Version 2.2.0. It boots, runs, and installs to a disk. The PC build has now been
 installed and confirmed working on desktop hardware, in addition to virtual machine testing.
 
 ## What's in it
@@ -35,7 +35,7 @@ brew install lima qemu
 
 The first build creates a small Debian VM called `glassbuild` (Lima) and builds inside it.
 That build takes 15 to 25 minutes, and later builds are quicker. You get
-`out/GlassOS-2.1.0-arm64.iso` and `out/GlassOS-2.1.0-amd64.iso` (the PC version).
+`out/GlassOS-2.2.0-arm64.iso` and `out/GlassOS-2.2.0-amd64.iso` (the PC version).
 
 To rebuild only what you changed:
 
@@ -69,7 +69,7 @@ This opens a window running the ARM build. The live session logs in by itself. T
 
 ## Install it on a computer
 
-1. Write `out/GlassOS-2.1.0-amd64.iso` to a USB stick (4 GB or larger) with balenaEtcher,
+1. Write `out/GlassOS-2.2.0-amd64.iso` to a USB stick (4 GB or larger) with balenaEtcher,
    Rufus, or `dd`.
 2. Turn off Secure Boot in the computer's firmware settings. GlassOS's boot loader isn't signed yet.
 3. Boot from the USB stick and choose **Install GlassOS** in the boot menu.
